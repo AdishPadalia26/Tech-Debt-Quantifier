@@ -27,3 +27,6 @@ tqdm
 PyJWT
 celery[redis]
 flower
+duckduckgo-search
+beautifulsoup4
+lxml

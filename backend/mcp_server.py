@@ -173,12 +173,18 @@ def get_git_hotspots(repo_id: str) -> dict:
 
 
 @mcp.tool()
-def estimate_debt_cost(repo_id: str) -> dict:
+def estimate_debt_cost(repo_id: str, github_url: str = None) -> dict:
     """
     Estimate total technical debt cost for a repository.
     
+    Uses the intelligence layer for dynamic data:
+    - Repo profiling for tech stack detection
+    - Market rate intelligence from multiple sources
+    - Risk-weighted security costs
+    
     Args:
         repo_id: Unique identifier for the repository
+        github_url: Optional GitHub URL for additional context
     
     Returns:
         Dictionary with comprehensive cost estimate and breakdown
@@ -196,7 +202,7 @@ def estimate_debt_cost(repo_id: str) -> dict:
         
         logger.info(f"Estimating debt cost for {repo_id}")
         estimator = CostEstimator()
-        estimate = estimator.estimate_total_cost(str(repo_path))
+        estimate = estimator.estimate_total_cost(str(repo_path), github_url)
         
         return {
             "status": "success",

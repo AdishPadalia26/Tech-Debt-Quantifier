@@ -101,7 +101,14 @@ class StaticAnalyzer:
         return results
 
     def _analyze_python_file(self, file_path: str, relative_path: str) -> list[dict[str, Any]]:
-        """Analyze Python file using Radon.
+        """Analyze Python file using Radon with AST filtering.
+        
+        Only counts:
+        - Top-level functions (col_offset == 0)
+        - Class methods (inside ClassDef nodes)
+        
+        Excludes:
+        - Nested functions (inside other functions)
         
         Args:
             file_path: Path to Python file
@@ -116,9 +123,18 @@ class StaticAnalyzer:
             with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
 
+            tree = ast.parse(content, filename=file_path)
+            
+            # Get lines of class methods and top-level functions using AST
+            top_level_and_method_lines = self._get_top_level_and_method_lines(tree)
+            
             functions = cc_visit(content)
 
             for func in functions:
+                # Filter: only include top-level functions or class methods
+                if func.lineno not in top_level_and_method_lines:
+                    continue
+                    
                 complexity = func.complexity
                 severity = self._get_severity(complexity)
                 full_name = f"{relative_path}:{func.lineno}"
@@ -138,6 +154,30 @@ class StaticAnalyzer:
             logger.warning(f"Error reading Python file {file_path}: {e}")
 
         return results
+
+    def _get_top_level_and_method_lines(self, tree: ast.AST) -> set[int]:
+        """Get line numbers of top-level functions and class methods.
+        
+        Args:
+            tree: AST tree of Python file
+            
+        Returns:
+            Set of line numbers that are top-level functions or class methods
+        """
+        valid_lines = set()
+        
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef):
+                # All methods inside a class are valid
+                for item in node.body:
+                    if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        valid_lines.add(item.lineno)
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                # Top-level functions have col_offset == 0
+                if node.col_offset == 0:
+                    valid_lines.add(node.lineno)
+        
+        return valid_lines
 
     def _analyze_lizard_file(self, file_path: str, relative_path: str) -> list[dict[str, Any]]:
         """Analyze non-Python file using Lizard.
@@ -209,6 +249,15 @@ class StaticAnalyzer:
     ) -> list[dict[str, Any]]:
         """Check a single file for missing docstrings.
         
+        Detects missing docstrings for:
+        - Classes (not just functions)
+        - Top-level functions (including single underscore _ prefixed)
+        - Class methods (including _ prefixed, but not __dunder__ methods)
+        
+        Skips:
+        - __init__ methods if their class has a docstring
+        - Dunder methods like __str__, __repr__, __len__, etc.
+        
         Args:
             file_path: Path to Python file
             repo_path: Root path for relative paths
@@ -225,13 +274,44 @@ class StaticAnalyzer:
             tree = ast.parse(content, filename=file_path)
             relative_path = os.path.relpath(file_path, repo_path)
 
-            for node in ast.walk(tree):
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    if node.name.startswith("_") and node.name != "__init__":
-                        continue
-                    if node.name == "__init__":
-                        continue
+            # Track which classes have docstrings (to decide whether to skip __init__)
+            class_docstrings: dict[int, bool] = {}
 
+            # First pass: check classes for docstrings
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ClassDef):
+                    has_docstring = ast.get_docstring(node) is not None
+                    class_docstrings[node.lineno] = has_docstring
+
+            # Second pass: check functions and classes for missing docstrings
+            for node in ast.walk(tree):
+                # Check for missing class docstrings
+                if isinstance(node, ast.ClassDef):
+                    if ast.get_docstring(node) is None:
+                        findings.append({
+                            "file": relative_path,
+                            "function": node.name,
+                            "line": node.lineno,
+                            "category": "documentation",
+                            "severity": "low",
+                            "remediation_minutes": 10.0,
+                            "type": "missing_class_docstring",
+                        })
+                    continue
+
+                # Check for missing function docstrings
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    # Skip dunder methods like __str__, __repr__, __len__
+                    if node.name.startswith("__") and node.name.endswith("__"):
+                        continue
+                    
+                    # Skip __init__ only if the class has a docstring
+                    if node.name == "__init__":
+                        class_lineno = self._get_parent_class_lineno(node, tree)
+                        if class_lineno and class_docstrings.get(class_lineno, False):
+                            continue
+                    
+                    # Check for missing docstring
                     if ast.get_docstring(node) is None:
                         findings.append({
                             "file": relative_path,
@@ -249,6 +329,15 @@ class StaticAnalyzer:
             logger.debug(f"Could not parse {file_path}: {e}")
 
         return findings
+
+    def _get_parent_class_lineno(self, func_node: ast.FunctionDef | ast.AsyncFunctionDef, tree: ast.AST) -> int | None:
+        """Find the lineno of the parent class for a function node."""
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef):
+                for item in node.body:
+                    if item is func_node:
+                        return node.lineno
+        return None
 
     def run_security_scan(self, repo_path: str) -> list[dict[str, Any]]:
         """Run Bandit security scan on repository.
@@ -289,9 +378,11 @@ class StaticAnalyzer:
                 confidence = issue.get("issue_confidence", "LOW")
                 test_id = issue.get("test_id", "unknown")
 
-                # Filter: only keep significant issues
+                # Filter: keep significant issues only
+                # Keep:
                 # - HIGH severity (any confidence)
                 # - MEDIUM severity + MEDIUM/HIGH confidence
+                # Remove: LOW severity or LOW confidence
                 is_high = severity == "HIGH"
                 is_medium_with_confidence = (
                     severity == "MEDIUM" and confidence in ("MEDIUM", "HIGH")

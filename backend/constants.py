@@ -36,7 +36,7 @@ DEBT_TYPE_TO_ROLE: Final[dict[str, str]] = {
     "documentation": "junior",
 }
 
-CISQ_COST_PER_FUNCTION: Final[float] = 550.0
+CISQ_COST_PER_FUNCTION: Final[float] = 310.0
 
 SONAR_SEVERITY_MINUTES: Final[dict[str, int]] = {
     "BLOCKER": 120,
@@ -95,7 +95,7 @@ VULNERABILITY_REMEDIATION_HOURS: Final[dict[str, float]] = {
 BANDIT_REMEDIATION_HOURS: Final[dict[str, float]] = {
     "HIGH": 8.0,
     "MEDIUM": 4.0,
-    "LOW": 1.0,
+    "LOW": 1.5,
 }
 
 COMPLEXITY_TO_SONAR_SEVERITY: Final[dict[str, str]] = {
@@ -118,6 +118,6 @@ COMPLEXITY_REMEDIATION_MINUTES: Final[dict[str, float]] = {
     "critical": 180.0,
 }
 
-FUNCTION_BASELINE_MINUTES: Final[float] = 10.0
+FUNCTION_BASELINE_MINUTES: Final[float] = 12.0
 
-MAINTENANCE_OVERHEAD_MULTIPLIER: Final[float] = 10.0
+MAINTENANCE_OVERHEAD_MULTIPLIER: Final[float] = 6.0
