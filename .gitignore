@@ -63,3 +63,6 @@ htmlcov/
 
 # Docker
 docker-compose.override.yml
+
+# Data cache
+backend/data/cache/

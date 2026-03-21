@@ -19,3 +19,11 @@ python-dotenv
 pydantic
 httpx
 pytest
+aiofiles
+diskcache
+numpy
+psutil
+tqdm
+PyJWT
+celery[redis]
+flower
