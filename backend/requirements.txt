@@ -2,7 +2,12 @@ fastapi
 uvicorn[standard]
 langchain
 langgraph
+langchain-core
+langchain-openai
+langchain-huggingface
 langchain-mcp-adapters
+huggingface_hub
+transformers
 mcp
 radon
 lizard

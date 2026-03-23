@@ -1,20 +1,27 @@
-"""Crawler agent for Tech Debt Quantifier.
+"""Crawler agent for Tech Debt Quantifier."""
 
-TODO Sprint 1 Day 5: Crawler agent that calls clone_repo MCP tool
-"""
-
-from typing import Any
+from agents.state import AgentState
 
 
-async def crawl_repository(github_url: str, repo_id: str) -> dict[str, Any]:
-    """
-    Crawl a GitHub repository using MCP tools.
-    
-    Args:
-        github_url: URL of the GitHub repository
-        repo_id: Unique identifier for the repository
-    
-    Returns:
-        Dictionary containing crawl results
-    """
-    raise NotImplementedError("Crawler agent implementation pending Sprint 1 Day 5")
+class CrawlerAgent:
+    """Agent that clones a GitHub repo using the MCP clone_repo tool."""
+
+    async def run(self, state: AgentState) -> AgentState:
+        """Clone the repo and update state."""
+        from mcp_server import clone_repo
+
+        github_url = state["github_url"]
+        repo_id = state["repo_id"]
+
+        result = clone_repo(github_url, repo_id)
+
+        if result["status"] in ["cloned", "already_exists"]:
+            state["repo_path"] = result["path"]
+            state["clone_status"] = "success"
+            state["status"] = "cloning_complete"
+        else:
+            state["clone_status"] = "failed"
+            state["error"] = result.get("error", "Unknown clone error")
+            state["status"] = "failed"
+
+        return state
