@@ -31,9 +31,10 @@ async def main() -> None:
     print(f"  Clone:      {result.get('clone_status')}")
     print(f"  Analysis:   {'OK' if result.get('raw_analysis') else 'FAILED'}")
     print(f"  Summary:    {'OK' if result.get('executive_summary') else 'FAILED'}")
-    print(f"  Priorities: {'OK' if result.get('priority_actions') else 'FAILED'}")
+    print(f"  Priorities: {result.get('priority_actions')}")
     print(f"  ROI:        {'OK' if result.get('roi_analysis') else 'FAILED'}")
     print(f"  Status:     {result.get('status')}")
+    print(f"  Error:      {result.get('error')}")
 
 
 if __name__ == "__main__":

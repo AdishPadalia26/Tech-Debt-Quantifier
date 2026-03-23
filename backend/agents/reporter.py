@@ -138,71 +138,139 @@ DATA SOURCES: {', '.join(analysis.get('data_sources_used', []))}
         self, context: str, analysis: dict
     ) -> list:
         """Generate top 3 prioritized actions with costs."""
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are a senior engineering consultant.
-             Output valid JSON only. No markdown, no explanation."""),
-            ("human", """Based on this analysis, return a JSON array 
-             of exactly 3 priority actions.
-             
-             Each action must have:
-             - rank: 1, 2, or 3
-             - title: short action title (max 8 words)
-             - file_or_module: specific file or module to fix
-             - why: one sentence explaining the business reason
-             - estimated_hours: realistic hours to fix
-             - estimated_cost: cost to fix (hours × engineer rate)
-             - saves_per_month: estimated monthly savings after fix
-             - sprint: which sprint to do this in (Sprint 1, 2, or 3)
-             
-             Return ONLY a JSON array. Example:
-             [
-               {{
-                 "rank": 1,
-                 "title": "Refactor authentication module",
-                 "file_or_module": "auth/login.py",
-                 "why": "Changed 23 times last sprint, causing 40% of bug fixes",
-                 "estimated_hours": 37,
-                 "estimated_cost": 3219,
-                 "saves_per_month": 1400,
-                 "sprint": "Sprint 1"
-               }}
-             ]
-             
-             Analysis data:
-             {context}"""),
-        ])
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        prompt_text = """You are a JSON API. Return ONLY a JSON array with 3 items.
+No markdown. No explanation. Just the raw JSON array.
 
-        chain = prompt | self.llm | JsonOutputParser()
+IMPORTANT: Use plain numbers only, NO expressions like "x / y" or "x - y".
+For example: use "242" not "24220 / 100".
+
+Each item needs: rank (integer), title (string), file_or_module (string), why (string), estimated_hours (number), estimated_cost (number), saves_per_month (number), sprint (string)
+
+Example: [{"rank": 1, "title": "Fix auth", "file_or_module": "auth.py", "why": "High bug rate", "estimated_hours": 37, "estimated_cost": 3219, "saves_per_month": 1400, "sprint": "Sprint 1"}]
+
+Technical debt data:
+""" + context
+
         try:
-            result = await chain.ainvoke({"context": context})
-            return result if isinstance(result, list) else []
+            result = self.llm._call(prompt_text)
+            logger.debug(f"[PRIORITIES] Raw LLM result: {repr(result)[:500]}")
+            json_str = self._extract_json(result)
+            logger.debug(f"[PRIORITIES] Extracted JSON: {repr(json_str)[:500]}")
+            import json
+            parsed = json.loads(json_str)
+            logger.debug(f"[PRIORITIES] Parsed result: {parsed}")
+            return parsed if isinstance(parsed, list) else []
         except Exception as e:
+            logger.error(f"[PRIORITIES] Error: {e}")
             return [{"error": f"Priority generation failed: {str(e)}"}]
+
+    def _extract_json(self, text: str) -> str:
+        """Extract JSON from text that may have markdown wrapping or escaped characters."""
+        import re
+        import json
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        text = text.strip()
+        text = re.sub(r'^```json\s*', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'^```\s*', '', text, flags=re.MULTILINE)
+        text = re.sub(r'```$', '', text, flags=re.MULTILINE)
+        text = text.strip()
+        
+        # Fix Windows backslashes in file paths (e.g., \tmp\repos -> /tmp/repos)
+        text = re.sub(r'\\([^"\\/bfnrtu])', r'/\1', text)
+        
+        start = text.find('[')
+        if start != -1:
+            bracket_count = 0
+            end = start
+            in_string = False
+            escape_next = False
+            for i, c in enumerate(text[start:], start):
+                if escape_next:
+                    escape_next = False
+                    continue
+                if c == '\\' and in_string:
+                    escape_next = True
+                    continue
+                if c == '"':
+                    in_string = not in_string
+                    continue
+                if not in_string:
+                    if c == '[':
+                        bracket_count += 1
+                    elif c == ']':
+                        bracket_count -= 1
+                        if bracket_count == 0:
+                            end = i + 1
+                            break
+            result = text[start:end]
+            try:
+                json.loads(result)
+                return result
+            except json.JSONDecodeError as e:
+                logger.debug(f"[EXTRACT] First parse failed: {e}")
+            try:
+                result = result.replace('\\"', '"')
+                result = result.replace('\\\\', '\\')
+                json.loads(result)
+                return result
+            except json.JSONDecodeError as e:
+                logger.debug(f"[EXTRACT] Second parse failed: {e}")
+        
+        start = text.find('{')
+        if start != -1:
+            brace_count = 0
+            end = start
+            in_string = False
+            escape_next = False
+            for i, c in enumerate(text[start:], start):
+                if escape_next:
+                    escape_next = False
+                    continue
+                if c == '\\' and in_string:
+                    escape_next = True
+                    continue
+                if c == '"':
+                    in_string = not in_string
+                    continue
+                if not in_string:
+                    if c == '{':
+                        brace_count += 1
+                    elif c == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            end = i + 1
+                            break
+            result = text[start:end]
+            try:
+                json.loads(result)
+                return f"[{result}]"
+            except json.JSONDecodeError:
+                pass
+        
+        return text
 
     async def _generate_roi(self, context: str, analysis: dict) -> dict:
         """Generate ROI analysis for fixing the debt."""
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are a senior engineering consultant.
-             Output valid JSON only. No markdown."""),
-            ("human", """Based on this analysis, return a JSON object
-             with ROI analysis for fixing this technical debt.
-             
-             Include:
-             - total_fix_cost: cost to fix all debt (from analysis)
-             - annual_maintenance_savings: estimated annual savings
-               (industry avg: 20-40% of debt cost saved per year)
-             - payback_months: months to break even
-             - 3_year_roi_pct: 3-year ROI percentage
-             - recommended_budget: quarterly budget to allocate
-             - recommendation: one sentence action recommendation
-             
-             Analysis data:
-             {context}"""),
-        ])
+        prompt_text = """You are a JSON API. Return ONLY a JSON object with these fields:
+total_fix_cost, annual_maintenance_savings, payback_months, 3_year_roi_pct, recommended_budget, recommendation
 
-        chain = prompt | self.llm | JsonOutputParser()
+Example: {"total_fix_cost": 131546, "annual_maintenance_savings": 52619, "payback_months": 24, "3_year_roi_pct": 180, "recommended_budget": 10962, "recommendation": "Allocate budget"}
+
+Technical debt data:
+""" + context
+
         try:
-            result = await chain.ainvoke({"context": context})
-            return result if isinstance(result, dict) else {}
+            result = self.llm._call(prompt_text)
+            json_str = self._extract_json(result)
+            import json
+            parsed = json.loads(json_str)
+            if isinstance(parsed, list) and len(parsed) == 1:
+                parsed = parsed[0]
+            return parsed if isinstance(parsed, dict) else {}
         except Exception as e:
             return {"error": f"ROI generation failed: {str(e)}"}

@@ -222,13 +222,13 @@ class CostEstimator:
         logger.info("[COST EST] Step 3: Running security scan with risk weighting...")
         security_issues = static_analyzer.run_security_scan(repo_path)
         security_cost = 0.0
+        security_rate = stack_rates.get("security", {}).get("rate", base_rate)
         security_agent = SecurityCostAgent()
 
         for issue in security_issues:
             cwe_id = issue.get("cwe_id", "CWE-UNKNOWN")
             severity = issue.get("severity", "MEDIUM")
 
-            security_rate = stack_rates.get("security", {}).get("rate", base_rate)
             fix_hours = issue.get("remediation_hours", 4.0)
             cvss_score = 7.0 if severity == "HIGH" else 5.0
 
