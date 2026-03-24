@@ -260,6 +260,8 @@ class RepoProfiler:
             result = {
                 "unique_authors": len(all_authors),
                 "active_authors": len(active_authors),
+                "estimated_team_size": len(all_authors),
+                "active_contributors": len(active_authors),
                 "bus_factor": bus_factor,
                 "commit_frequency_per_week": round(commits_per_week, 2),
                 "repo_age_days": repo_age_days,
@@ -278,6 +280,8 @@ class RepoProfiler:
         return {
             "unique_authors": 1,
             "active_authors": 1,
+            "estimated_team_size": 1,
+            "active_contributors": 1,
             "bus_factor": 1,
             "commit_frequency_per_week": 0,
             "repo_age_days": 365,

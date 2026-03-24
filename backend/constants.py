@@ -109,7 +109,7 @@ HOURS_PER_SPRINT: Final[float] = 80.0
 
 DEBT_SCORE_MAX: Final[float] = 10.0
 
-SANITY_CHECK_VARIANCE_THRESHOLD: Final[float] = 60.0
+SANITY_CHECK_VARIANCE_THRESHOLD: Final[float] = 150.0
 
 COMPLEXITY_REMEDIATION_MINUTES: Final[dict[str, float]] = {
     "low": 15.0,

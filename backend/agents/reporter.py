@@ -27,6 +27,10 @@ class ReporterAgent:
         priorities = await self._generate_priorities(context, analysis)
         roi = await self._generate_roi(context, analysis)
 
+        # Post-process: fix garbled paths, generate readable titles, compute ROI fallback
+        priorities = self._sanitize_priorities(priorities, analysis)
+        roi = self._sanitize_roi(roi, analysis)
+
         state["executive_summary"] = summary
         state["priority_actions"] = priorities
         state["roi_analysis"] = roi
@@ -253,6 +257,172 @@ Technical debt data:
                 pass
         
         return text
+
+    def _sanitize_priorities(self, priorities: list, analysis: dict) -> list:
+        """Fix garbled LLM output: clean file paths, generate readable titles."""
+        import re
+
+        if not priorities or not isinstance(priorities, list):
+            return priorities
+
+        # Build lookup from actual debt items for clean file paths and metadata
+        debt_items = analysis.get("debt_items", [])
+        # Group by file basename for lookup
+        items_by_basename: dict[str, list[dict]] = {}
+        for item in debt_items:
+            basename = item.get("file", "").split("/")[-1].split("\\")[-1]
+            if basename:
+                items_by_basename.setdefault(basename, []).append(item)
+
+        # Collect top items per category for title generation
+        category_top: dict[str, list[dict]] = {}
+        for item in debt_items:
+            cat = item.get("category", "code_quality")
+            category_top.setdefault(cat, []).append(item)
+        for cat in category_top:
+            category_top[cat].sort(key=lambda x: x.get("cost_usd", 0), reverse=True)
+
+        # Category display names
+        cat_names = {
+            "code_quality": "Code Quality",
+            "security": "Security",
+            "documentation": "Documentation",
+            "dependency": "Dependencies",
+            "test_debt": "Test Coverage",
+        }
+
+        sanitized = []
+        for action in priorities:
+            if not isinstance(action, dict) or "error" in action:
+                sanitized.append(action)
+                continue
+
+            file_or_module = action.get("file_or_module", "")
+            title = action.get("title", "")
+
+            # Detect garbled paths: contain emoji, unusual chars, or nonsensical segments
+            is_garbled = bool(re.search(r'[🅰-🆑🌀-🗿🚀-🛿🤀-🧿]', file_or_module))
+            is_garbled = is_garbled or bool(re.search(r'[🅰-🆑🌀-🗿🚀-🛿🤀-🧿]', title))
+
+            # Try to find a clean file path from actual debt items
+            clean_file = file_or_module
+            matched_items = []
+
+            # Extract any recognizable filename from the garbled text
+            basename_match = re.findall(r'[\w]+\.(?:py|js|ts|java|go|rb|php|rs)', file_or_module)
+            if basename_match:
+                for bm in basename_match:
+                    if bm in items_by_basename:
+                        matched_items = items_by_basename[bm]
+                        # Use the actual relative path from debt items
+                        clean_file = matched_items[0].get("file", bm)
+                        break
+
+            # If still garbled or no file found, use top debt items by rank
+            rank = action.get("rank", len(sanitized) + 1)
+            if is_garbled or not matched_items:
+                # Find the top item matching this rank's category
+                sorted_items = sorted(debt_items, key=lambda x: x.get("cost_usd", 0), reverse=True)
+                idx = min(rank - 1, len(sorted_items) - 1) if sorted_items else 0
+                if sorted_items:
+                    top_item = sorted_items[idx]
+                    clean_file = top_item.get("file", file_or_module)
+                    matched_items = [top_item]
+
+            # Generate readable title from file/function context
+            clean_title = title
+            if is_garbled or re.search(r'[/\\]', title):
+                clean_title = self._make_readable_title(clean_file, matched_items, rank)
+
+            # Clean up file_or_module display
+            display_file = clean_file.replace("\\", "/")
+            # Strip long temp paths like /tmp/repos/xxx/...
+            if "/tmp/repos/" in display_file:
+                display_file = re.sub(r'^.*/repos/[^/]+/', '', display_file)
+
+            action["file_or_module"] = display_file
+            action["title"] = clean_title
+            sanitized.append(action)
+
+        return sanitized
+
+    def _make_readable_title(self, file_path: str, items: list[dict], rank: int) -> str:
+        """Generate a human-readable action title from file path and debt items."""
+        basename = file_path.split("/")[-1].split("\\")[-1].replace(".py", "").replace(".js", "")
+        # Convert snake_case to readable
+        name = basename.replace("_", " ").replace("-", " ").title()
+
+        if items:
+            cat = items[0].get("category", "")
+            severity = items[0].get("severity", "")
+            func = items[0].get("function", "")
+
+            if cat == "security":
+                return f"Fix security vulnerabilities in {name}"
+            elif cat == "documentation":
+                return f"Add missing documentation to {name}"
+            elif cat == "dependency":
+                return f"Update vulnerable dependencies"
+            elif func:
+                func_readable = func.replace("_", " ").title()
+                return f"Refactor {func_readable} in {name}"
+            elif severity in ("critical", "high"):
+                return f"Address critical complexity in {name}"
+            else:
+                return f"Reduce technical debt in {name}"
+        return f"Refactor {name}"
+
+    def _sanitize_roi(self, roi: dict, analysis: dict) -> dict:
+        """Compute ROI from code if LLM returned zero/nonsense values."""
+        if not roi or not isinstance(roi, dict) or "error" in roi:
+            return self._compute_roi_fallback(analysis)
+
+        # Check if LLM returned valid non-zero values
+        savings = roi.get("annual_maintenance_savings", 0)
+        roi_pct = roi.get("3_year_roi_pct", 0)
+        fix_cost = roi.get("total_fix_cost", 0)
+
+        # If all key values are zero or missing, use code-based fallback
+        if (not savings or savings == 0) and (not roi_pct or roi_pct == 0):
+            return self._compute_roi_fallback(analysis)
+
+        # Fill in any missing fields from fallback
+        fallback = self._compute_roi_fallback(analysis)
+        for key in ["total_fix_cost", "annual_maintenance_savings", "payback_months",
+                     "3_year_roi_pct", "recommended_budget", "recommendation"]:
+            if not roi.get(key):
+                roi[key] = fallback.get(key)
+
+        return roi
+
+    def _compute_roi_fallback(self, analysis: dict) -> dict:
+        """Compute ROI from actual analysis data."""
+        total_cost = analysis.get("total_cost_usd", 0)
+        total_hours = analysis.get("total_remediation_hours", 0)
+        hourly_rate = 85  # Default engineer rate
+
+        fix_cost = total_cost
+        # Industry estimate: maintenance overhead is ~40% of debt cost annually
+        annual_savings = round(total_cost * 0.40, 2)
+        payback_months = round((fix_cost / annual_savings) * 12) if annual_savings > 0 else 99
+        three_yr_return = round(((annual_savings * 3 - fix_cost) / fix_cost) * 100) if fix_cost > 0 else 0
+        quarterly_budget = round(fix_cost / 4, 2)
+
+        if three_yr_return > 100:
+            rec = "Strong ROI — prioritize top 3 items this quarter for maximum impact."
+        elif three_yr_return > 0:
+            rec = "Positive ROI — recommend phased remediation over 2-3 quarters."
+        else:
+            rec = "Low ROI — focus on highest-severity items only to contain costs."
+
+        return {
+            "total_fix_cost": round(fix_cost),
+            "annual_maintenance_savings": round(annual_savings),
+            "payback_months": payback_months,
+            "3_year_roi_pct": three_yr_return,
+            "recommended_budget": round(quarterly_budget),
+            "recommendation": rec,
+        }
 
     async def _generate_roi(self, context: str, analysis: dict) -> dict:
         """Generate ROI analysis for fixing the debt."""

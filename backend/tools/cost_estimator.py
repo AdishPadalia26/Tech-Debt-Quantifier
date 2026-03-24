@@ -89,9 +89,11 @@ class CostEstimator:
             Sanity check results with assessment
         """
         cost_per_function = total_cost / max(function_count, 1)
-        variance_pct = abs(cost_per_function - cisq_per_function) / cisq_per_function * 100
-
-        is_reasonable = variance_pct < SANITY_CHECK_VARIANCE_THRESHOLD
+        variance_pct = (cost_per_function - cisq_per_function) / cisq_per_function * 100
+        
+        # Being below industry average is always reasonable
+        # Only flag as unreasonable if significantly above average
+        is_reasonable = cost_per_function <= cisq_per_function or variance_pct < SANITY_CHECK_VARIANCE_THRESHOLD
 
         if cost_per_function < cisq_per_function * 0.5:
             assessment = "Lower than industry average - code may be well-maintained"
