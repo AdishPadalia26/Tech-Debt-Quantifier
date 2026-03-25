@@ -299,6 +299,47 @@ async def get_scan(scan_id: str):
         db.close()
 
 
+@app.get("/report/{scan_id}/pdf")
+async def download_pdf_report(scan_id: str):
+    """Download a PDF report for a specific scan."""
+    from fastapi.responses import Response
+    from reports.pdf_generator import TechDebtPDFGenerator
+
+    if not DB_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available.")
+
+    db = SessionLocal()
+    try:
+        from database.models import Scan
+
+        scan = db.query(Scan).filter(Scan.id == scan_id).first()
+        if not scan:
+            raise HTTPException(404, "Scan not found")
+
+        analysis = scan.raw_result or {}
+        agent_state = scan.raw_result or {}
+
+        generator = TechDebtPDFGenerator()
+        pdf_bytes = generator.generate(analysis, agent_state)
+
+        repo_name = "report"
+        if scan.repository:
+            repo_name = scan.repository.repo_name or "report"
+
+        filename = f"tech-debt-{repo_name}-{scan_id[:8]}.pdf"
+
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except Exception as e:
+        logger.error(f"PDF generation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(e)}")
+    finally:
+        db.close()
+
+
 if __name__ == "__main__":
     import uvicorn
 

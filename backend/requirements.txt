@@ -21,6 +21,7 @@ psycopg2-binary
 redis
 celery
 reportlab
+pillow
 plotly
 python-dotenv
 pydantic
