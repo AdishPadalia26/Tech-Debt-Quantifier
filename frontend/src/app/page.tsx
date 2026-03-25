@@ -19,6 +19,7 @@ export default function Home() {
   const [error, setError] = useState('');
   const [repoHistory, setRepoHistory] = useState<RepoHistory | null>(null);
   const [currentGithubUrl, setCurrentGithubUrl] = useState('');
+  const [downloading, setDownloading] = useState(false);
 
   const handleJobStarted = (id: string, githubUrl?: string) => {
     setJobId(id);
@@ -46,6 +47,31 @@ export default function Home() {
       } catch (e) {
         console.log('History not available yet:', e);
       }
+    }
+  };
+
+  const handleDownloadPDF = async () => {
+    if (!jobId) return;
+    setDownloading(true);
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/report/${jobId}/pdf`
+      );
+      if (!response.ok) throw new Error('PDF generation failed');
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `tech-debt-report-${Date.now()}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error('PDF download failed:', err);
+    } finally {
+      setDownloading(false);
     }
   };
 
@@ -170,6 +196,28 @@ export default function Home() {
                 </p>
               </div>
             )}
+
+            {/* PDF Download Button */}
+            <div className="flex justify-end">
+              <button
+                onClick={handleDownloadPDF}
+                disabled={downloading}
+                className="flex items-center gap-2 px-5 py-2.5 
+                           bg-purple-600 hover:bg-purple-700
+                           disabled:bg-gray-600 disabled:cursor-not-allowed
+                           text-white font-medium rounded-lg 
+                           transition-colors text-sm"
+              >
+                {downloading ? (
+                  <>
+                    <span className="animate-spin">⏳</span>
+                    Generating PDF...
+                  </>
+                ) : (
+                  <>📄 Download PDF Report</>
+                )}
+              </button>
+            </div>
 
             {/* Score Cards */}
             <DebtScoreCard

@@ -3,12 +3,15 @@
 import os
 import uuid
 import time
+import io
 import logging
 import traceback
+from datetime import datetime
 from typing import Dict, Any
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -299,45 +302,51 @@ async def get_scan(scan_id: str):
         db.close()
 
 
-@app.get("/report/{scan_id}/pdf")
-async def download_pdf_report(scan_id: str):
-    """Download a PDF report for a specific scan."""
-    from fastapi.responses import Response
-    from reports.pdf_generator import TechDebtPDFGenerator
+@app.get("/report/{job_id}/pdf")
+async def download_pdf_report(job_id: str):
+    """Generate and download PDF report for a completed job."""
 
-    if not DB_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Database not available.")
-
-    db = SessionLocal()
-    try:
+    if job_id not in jobs:
+        # Try loading from DB
+        from database.connection import SessionLocal
         from database.models import Scan
-
-        scan = db.query(Scan).filter(Scan.id == scan_id).first()
+        db = SessionLocal()
+        scan = db.query(Scan).filter(
+            Scan.job_id == job_id
+        ).first()
+        db.close()
         if not scan:
-            raise HTTPException(404, "Scan not found")
+            raise HTTPException(404, "Job not found")
+        result = scan.raw_result
+    else:
+        job = jobs[job_id]
+        if job['status'] != 'complete':
+            raise HTTPException(400, f"Job not complete: {job['status']}")
+        result = job['result']
 
-        analysis = scan.raw_result or {}
-        agent_state = scan.raw_result or {}
-
+    try:
+        from reports.pdf_generator import TechDebtPDFGenerator
         generator = TechDebtPDFGenerator()
-        pdf_bytes = generator.generate(analysis, agent_state)
 
-        repo_name = "report"
-        if scan.repository:
-            repo_name = scan.repository.repo_name or "report"
+        analysis = result.get('raw_analysis') or result
+        pdf_bytes = generator.generate(analysis, result)
 
-        filename = f"tech-debt-{repo_name}-{scan_id[:8]}.pdf"
+        repo_name = (result.get('github_url', 'report')
+                     .split('/')[-1])
+        filename = f"tech-debt-{repo_name}-{datetime.now().strftime('%Y%m%d')}.pdf"
 
-        return Response(
-            content=pdf_bytes,
+        return StreamingResponse(
+            io.BytesIO(pdf_bytes),
             media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            }
         )
+
     except Exception as e:
         logger.error(f"PDF generation failed: {e}")
-        raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(e)}")
-    finally:
-        db.close()
+        logger.error(traceback.format_exc())
+        raise HTTPException(500, f"PDF generation failed: {str(e)}")
 
 
 if __name__ == "__main__":
