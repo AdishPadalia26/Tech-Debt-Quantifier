@@ -43,6 +43,28 @@ except Exception as e:
 
 jobs: Dict[str, Any] = {}
 
+
+def normalize_repo_id(github_url: str) -> str:
+    """Always store as 'owner/repo' format."""
+    url = github_url.strip().rstrip("/")
+    # Strip protocol prefixes
+    for prefix in ["https://github.com/", "http://github.com/", "github.com/"]:
+        if url.startswith(prefix):
+            url = url[len(prefix):]
+            break
+    # Already short format
+    if not url.startswith("http"):
+        segments = url.strip("/").split("/")
+        if len(segments) >= 2:
+            return f"{segments[0]}/{segments[1]}"
+        return url
+    # Fallback: extract from full URL
+    parts = url.replace("https://github.com/", "").replace("http://github.com/", "")
+    segments = parts.strip("/").split("/")
+    if len(segments) >= 2:
+        return f"{segments[0]}/{segments[1]}"
+    return parts
+
 app = FastAPI(
     title="Tech Debt Quantifier",
     version="0.2.0",
@@ -111,7 +133,7 @@ async def analyze_repo(
         raise HTTPException(status_code=400, detail="Must be a github.com URL")
 
     job_id = str(uuid.uuid4())
-    repo_id = request.repo_id or request.github_url.split("/")[-1]
+    repo_id = normalize_repo_id(request.repo_id or request.github_url)
 
     jobs[job_id] = {
         "status": "queued",
@@ -347,6 +369,210 @@ async def download_pdf_report(job_id: str):
         logger.error(f"PDF generation failed: {e}")
         logger.error(traceback.format_exc())
         raise HTTPException(500, f"PDF generation failed: {str(e)}")
+
+
+def _top_category(analysis: dict) -> str:
+    cats = analysis.get("cost_by_category", {})
+    if not cats:
+        return "unknown"
+    top = max(cats.items(), key=lambda x: x[1].get("cost_usd", 0) if isinstance(x[1], dict) else 0)
+    return top[0].replace("_", " ").title()
+
+
+def _risk_level(score: float) -> str:
+    if score >= 7:
+        return "critical"
+    if score >= 5:
+        return "high"
+    if score >= 3:
+        return "medium"
+    return "low"
+
+
+@app.get("/portfolio")
+async def get_portfolio():
+    """Return all repos ranked by debt score descending."""
+    from database.connection import SessionLocal
+    from database.models import Scan, Repository
+
+    db = SessionLocal()
+
+    # Get ALL scans, then deduplicate using normalized repo key
+    all_scans = (
+        db.query(Scan)
+        .order_by(Scan.created_at.desc())
+        .all()
+    )
+
+    # Build repo lookup
+    repo_map = {r.id: r for r in db.query(Repository).all()}
+    db.close()
+
+    # Deduplicate: keep only latest scan per normalized repo
+    seen = {}
+    for scan in all_scans:
+        raw = scan.raw_result or {}
+        # Get github_url from multiple possible sources
+        github_url = (
+            raw.get("github_url")
+            or raw.get("repo_url")
+            or (repo_map.get(scan.repository_id).github_url if repo_map.get(scan.repository_id) else None)
+            or ""
+        )
+        # Normalize to owner/repo key
+        key = normalize_repo_id(github_url) if github_url else scan.repository_id
+        if not key:
+            continue
+        if key not in seen:
+            seen[key] = (scan, github_url)
+
+    portfolio = []
+    for key, (scan, github_url) in seen.items():
+        raw = scan.raw_result or {}
+        analysis = raw.get("raw_analysis") or raw
+        profile = analysis.get("repo_profile", {})
+        tech = profile.get("tech_stack", {}) if profile else {}
+        team = profile.get("team", {}) if profile else {}
+
+        # Ensure github_url has full format for links
+        full_url = github_url
+        if full_url and not full_url.startswith("http"):
+            full_url = f"https://github.com/{full_url}"
+
+        portfolio.append(
+            {
+                "repo_id": key,
+                "github_url": full_url or f"https://github.com/{key}",
+                "debt_score": float(scan.debt_score or 0),
+                "total_cost": float(scan.total_cost_usd or 0),
+                "remediation_hours": float(scan.total_hours or 0),
+                "language": tech.get("primary_language", scan.primary_language or "Unknown"),
+                "team_size": team.get("estimated_team_size", scan.team_size or 0),
+                "bus_factor": team.get("bus_factor", scan.bus_factor or 0),
+                "has_tests": tech.get("has_tests", False),
+                "has_ci_cd": tech.get("has_ci_cd", False),
+                "scanned_at": scan.created_at.isoformat() if scan.created_at else None,
+                "top_category": _top_category(analysis),
+                "risk_level": _risk_level(float(scan.debt_score or 0)),
+            }
+        )
+
+    # Sort by debt_score descending
+    portfolio.sort(key=lambda x: x["debt_score"], reverse=True)
+    return {"repos": portfolio, "total": len(portfolio)}
+
+
+@app.get("/portfolio/summary")
+async def get_portfolio_summary():
+    """Aggregate stats across all tracked repos."""
+    from database.connection import SessionLocal
+    from database.models import Scan
+    from sqlalchemy import func
+
+    db = SessionLocal()
+    stats = db.query(
+        func.count(Scan.id).label("total_scans"),
+        func.avg(Scan.debt_score).label("avg_score"),
+        func.sum(Scan.total_cost_usd).label("total_cost"),
+        func.sum(Scan.total_hours).label("total_hours"),
+        func.max(Scan.debt_score).label("worst_score"),
+        func.min(Scan.debt_score).label("best_score"),
+    ).first()
+
+    unique_repos = db.query(func.count(func.distinct(Scan.repository_id))).scalar()
+
+    db.close()
+
+    return {
+        "total_repos": unique_repos or 0,
+        "total_scans": stats.total_scans or 0,
+        "avg_debt_score": round(float(stats.avg_score or 0), 1),
+        "total_cost_usd": float(stats.total_cost or 0),
+        "total_hours": float(stats.total_hours or 0),
+        "worst_score": float(stats.worst_score or 0),
+        "best_score": float(stats.best_score or 0),
+    }
+
+
+@app.get("/portfolio/trends")
+async def get_portfolio_trends():
+    """Show debt score over time for all repos."""
+    from database.connection import SessionLocal
+    from database.models import Scan
+
+    db = SessionLocal()
+    scans = (
+        db.query(
+            Scan.repository_id,
+            Scan.debt_score,
+            Scan.total_cost_usd,
+            Scan.created_at,
+        )
+        .order_by(Scan.repository_id, Scan.created_at)
+        .all()
+    )
+    db.close()
+
+    trends = {}
+    for s in scans:
+        rid = s.repository_id
+        if rid not in trends:
+            trends[rid] = []
+        trends[rid].append(
+            {
+                "date": s.created_at.isoformat() if s.created_at else None,
+                "score": s.debt_score or 0,
+                "cost": s.total_cost_usd or 0,
+            }
+        )
+
+    return {"trends": trends}
+
+
+@app.delete("/portfolio/{repo_id:path}")
+async def remove_from_portfolio(repo_id: str):
+    """Remove a repo from tracking."""
+    from database.connection import SessionLocal
+    from database.models import Scan
+
+    db = SessionLocal()
+    deleted = db.query(Scan).filter(Scan.repository_id == repo_id).delete()
+    db.commit()
+    db.close()
+    return {"deleted_scans": deleted, "repo_id": repo_id}
+
+
+@app.get("/debug/scans")
+async def debug_scans():
+    """Show all scans in DB with their repo info."""
+    from database.connection import SessionLocal
+    from database.models import Scan, Repository
+
+    db = SessionLocal()
+    scans = db.query(Scan).order_by(Scan.created_at.desc()).all()
+    repo_map = {r.id: r for r in db.query(Repository).all()}
+    db.close()
+
+    return {
+        "count": len(scans),
+        "scans": [
+            {
+                "id": s.id,
+                "repository_id": s.repository_id,
+                "repo_url": repo_map.get(s.repository_id).github_url if repo_map.get(s.repository_id) else None,
+                "normalized": normalize_repo_id(
+                    (s.raw_result or {}).get("github_url")
+                    or (repo_map.get(s.repository_id).github_url if repo_map.get(s.repository_id) else "")
+                    or ""
+                ),
+                "debt_score": s.debt_score,
+                "total_cost": s.total_cost_usd,
+                "github_url": (s.raw_result or {}).get("github_url"),
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+            }
+            for s in scans
+        ],
+    }
 
 
 if __name__ == "__main__":

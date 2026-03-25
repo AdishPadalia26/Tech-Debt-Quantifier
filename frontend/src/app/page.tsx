@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import Link from 'next/link';
 import AnalyzeForm from '@/components/AnalyzeForm';
 import ProgressBar from '@/components/ProgressBar';
 import DebtScoreCard from '@/components/DebtScoreCard';
@@ -103,6 +104,16 @@ export default function Home() {
               ← New Analysis
             </button>
           )}
+          <Link
+            href="/portfolio"
+            className="flex items-center gap-2 px-4 py-2
+                       bg-gray-800 hover:bg-gray-700
+                       text-gray-300 hover:text-white
+                       text-sm rounded-lg transition-colors
+                       border border-gray-700"
+          >
+            Portfolio View
+          </Link>
         </div>
       </header>
 

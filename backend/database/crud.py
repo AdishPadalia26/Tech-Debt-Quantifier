@@ -12,26 +12,41 @@ logger = logging.getLogger(__name__)
 # ─── Repository Operations ───────────────────────────────────
 
 
+def _normalize_url(github_url: str) -> str:
+    """Normalize any repo identifier to full GitHub URL for consistent lookups."""
+    url = github_url.strip().rstrip("/")
+    if url.startswith("https://github.com/"):
+        return url
+    if url.startswith("http://github.com/"):
+        return url.replace("http://", "https://")
+    if url.startswith("github.com/"):
+        return f"https://{url}"
+    if not url.startswith("http"):
+        return f"https://github.com/{url}"
+    return url
+
+
 def get_or_create_repository(db: Session, github_url: str) -> Repository:
     """Get existing repo or create new one."""
-    parts = github_url.rstrip("/").split("/")
+    normalized = _normalize_url(github_url)
+    parts = normalized.rstrip("/").split("/")
     owner = parts[-2] if len(parts) >= 2 else "unknown"
     name = parts[-1] if parts else "unknown"
 
     repo = db.query(Repository).filter(
-        Repository.github_url == github_url
+        Repository.github_url == normalized
     ).first()
 
     if not repo:
         repo = Repository(
-            github_url=github_url,
+            github_url=normalized,
             repo_name=name,
             repo_owner=owner,
         )
         db.add(repo)
         db.commit()
         db.refresh(repo)
-        logger.info(f"Created new repository: {github_url}")
+        logger.info(f"Created new repository: {normalized}")
 
     return repo
 
@@ -120,8 +135,9 @@ def save_scan(
 
 def get_scan_history(db: Session, github_url: str, limit: int = 10) -> list:
     """Get last N scans for a repo, ordered newest first."""
+    normalized = _normalize_url(github_url)
     repo = db.query(Repository).filter(
-        Repository.github_url == github_url
+        Repository.github_url == normalized
     ).first()
 
     if not repo:
