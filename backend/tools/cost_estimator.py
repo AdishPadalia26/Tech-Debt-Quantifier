@@ -370,6 +370,11 @@ class CostEstimator:
             "multiplier_breakdown": multipliers,
             "rate_confidence": stack_rates,
             "ai_suspected_files": len(ai_files),
+            "hourly_rates": {
+                "blended_rate": round(base_rate, 2),
+                "confidence": rates_source or "medium",
+                "sources_used": self._data_sources or ["BLS fallback"]
+            },
             "data_sources": {
                 "rates": "Dynamic: BLS + Levels.fyi + SO + DuckDuckGo",
                 "remediation_times": "SonarCloud API or fallback",

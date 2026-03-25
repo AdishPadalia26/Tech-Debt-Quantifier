@@ -258,12 +258,117 @@ Technical debt data:
         
         return text
 
+    def _mathematical_priorities(self, analysis: dict) -> list:
+        """Generate priorities from actual data without LLM, filtering aggregates."""
+        import os
+        import re
+
+        all_items = analysis.get("debt_items", [])
+        total_cost = analysis.get("total_cost_usd", 1)
+
+        def is_valid_item(item):
+            file_path = item.get('file', '')
+            adjusted_minutes = item.get('adjusted_minutes', 0) or 0
+            hours = adjusted_minutes / 60
+            cost = item.get('cost_usd', 0) or 0
+
+            # Reject aggregate items (cost > 20% of total)
+            if cost > (total_cost * 0.20):
+                return False
+
+            # Reject items with no real file path
+            if not file_path or file_path in ['unknown', '', 'base_security']:
+                return False
+
+            # Reject items with unrealistic hours (>200hrs = aggregate)
+            if hours > 200:
+                return False
+
+            return True
+
+        valid_items = [i for i in all_items if is_valid_item(i)]
+
+        # If no valid items after filtering, use top items but cap hours
+        if not valid_items:
+            valid_items = sorted(
+                all_items, key=lambda x: x.get('cost_usd', 0), reverse=True
+            )
+            valid_items = [i for i in valid_items if
+                          (i.get('adjusted_minutes', 0) or 0) / 60 < 200]
+
+        # Sort by cost and take top 3
+        top_items = sorted(
+            valid_items,
+            key=lambda x: x.get('cost_usd', 0),
+            reverse=True
+        )[:3]
+
+        priorities = []
+        sprint_names = ["Sprint 1", "Sprint 2", "Sprint 3"]
+
+        for i, item in enumerate(top_items):
+            adjusted_minutes = item.get('adjusted_minutes', 0) or 0
+            hours = adjusted_minutes / 60
+            cost = item.get('cost_usd', 0) or 0
+
+            # Clean file path
+            raw_file = item.get('file', '')
+            clean_path = re.sub(r'^/tmp/repos/[^/]+/', '', str(raw_file))
+            clean_path = re.sub(r':\?$|:\d+$', '', clean_path).strip()
+            file_name = os.path.splitext(os.path.basename(clean_path))[0]
+
+            category = (item.get('category') or 'code_quality').replace('_', ' ')
+            severity = (item.get('severity') or 'high').capitalize()
+            complexity = item.get('complexity', 0) or 0
+            churn = item.get('churn_multiplier', 1.0) or 1.0
+
+            # Readable title
+            if file_name and file_name not in ['unknown', '']:
+                if category == 'security':
+                    title = f"Fix security issues in {file_name}"
+                elif int(complexity) > 10:
+                    title = f"Refactor complex {file_name} module"
+                elif churn > 1.5:
+                    title = f"Stabilize high-churn {file_name}"
+                else:
+                    title = f"Fix {severity.lower()} {category} in {file_name}"
+            else:
+                title = f"Fix {severity.lower()} {category} issue"
+
+            # Meaningful why sentence
+            why_parts = []
+            if churn > 1.5:
+                why_parts.append(f"changes frequently ({churn:.1f}x churn)")
+            if int(complexity) > 10:
+                why_parts.append(f"high complexity ({complexity})")
+            if category == 'security':
+                why_parts.append("security vulnerability increases breach risk")
+            why_parts.append(f"costs ${cost:,.0f} to remediate")
+            why = f"This file {', '.join(why_parts)}."
+
+            # Monthly savings: assume fixing removes 15% of ongoing maintenance
+            saves_per_month = round((cost * 0.15) / 12, 2)
+
+            priorities.append({
+                "rank": i + 1,
+                "title": title,
+                "file_or_module": clean_path or file_name or 'unknown',
+                "why": why,
+                "estimated_hours": round(hours, 1),
+                "estimated_cost": round(cost, 2),
+                "saves_per_month": saves_per_month,
+                "sprint": sprint_names[i],
+                "source": "mathematical_fallback"
+            })
+
+        return priorities
+
     def _sanitize_priorities(self, priorities: list, analysis: dict) -> list:
         """Fix garbled LLM output: clean file paths, generate readable titles."""
         import re
 
         if not priorities or not isinstance(priorities, list):
-            return priorities
+            return self._mathematical_priorities(analysis)
 
         # Build lookup from actual debt items for clean file paths and metadata
         debt_items = analysis.get("debt_items", [])
@@ -294,8 +399,7 @@ Technical debt data:
         sanitized = []
         for action in priorities:
             if not isinstance(action, dict) or "error" in action:
-                sanitized.append(action)
-                continue
+                return self._mathematical_priorities(analysis)
 
             file_or_module = action.get("file_or_module", "")
             title = action.get("title", "")

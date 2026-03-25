@@ -6,7 +6,9 @@ import DebtScoreCard from '@/components/DebtScoreCard';
 import CostBreakdownChart from '@/components/CostBreakdownChart';
 import PriorityActions from '@/components/PriorityActions';
 import RepoProfile from '@/components/RepoProfile';
-import { JobResult, DebtReport } from '@/types';
+import DebtTrendChart from '@/components/DebtTrendChart';
+import { JobResult, DebtReport, RepoHistory } from '@/types';
+import { getRepoHistory } from '@/lib/api';
 
 type AppState = 'idle' | 'analyzing' | 'complete' | 'error';
 
@@ -15,15 +17,19 @@ export default function Home() {
   const [jobId, setJobId] = useState<string>('');
   const [result, setResult] = useState<DebtReport | null>(null);
   const [error, setError] = useState('');
+  const [repoHistory, setRepoHistory] = useState<RepoHistory | null>(null);
+  const [currentGithubUrl, setCurrentGithubUrl] = useState('');
 
-  const handleJobStarted = (id: string) => {
+  const handleJobStarted = (id: string, githubUrl?: string) => {
     setJobId(id);
     setAppState('analyzing');
     setResult(null);
     setError('');
+    setRepoHistory(null);
+    if (githubUrl) setCurrentGithubUrl(githubUrl);
   };
 
-  const handleComplete = (jobResult: JobResult) => {
+  const handleComplete = async (jobResult: JobResult) => {
     if (jobResult.status === 'failed') {
       setError(jobResult.error || 'Analysis failed');
       setAppState('error');
@@ -32,6 +38,14 @@ export default function Home() {
     if (jobResult.raw) {
       setResult(jobResult.raw);
       setAppState('complete');
+
+      // Fetch scan history for trend chart
+      try {
+        const history = await getRepoHistory(currentGithubUrl);
+        setRepoHistory(history);
+      } catch (e) {
+        console.log('History not available yet:', e);
+      }
     }
   };
 
@@ -165,6 +179,14 @@ export default function Home() {
               sprints={result.total_remediation_sprints}
               sanityCheck={result.sanity_check}
             />
+
+            {/* Debt Trend Chart */}
+            {repoHistory && (
+              <DebtTrendChart 
+                trend={repoHistory.trend}
+                currentCost={result.total_cost_usd}
+              />
+            )}
 
             {/* Charts + Profile */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

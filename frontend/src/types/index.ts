@@ -108,3 +108,51 @@ export interface JobResult {
   raw?: DebtReport;
   error?: string;
 }
+
+// ─── History & Trend Types ───────────────────────────────────
+
+export interface ScanSummary {
+  scan_id: string;
+  date: string;
+  date_display: string;
+  total_cost: number;
+  debt_score: number;
+  total_hours: number;
+  executive_summary?: string;
+  cost_by_category?: Record<string, CostByCategory>;
+}
+
+export interface TrendPoint {
+  date: string;
+  date_display: string;
+  total_cost: number;
+  debt_score: number;
+  scan_id: string;
+}
+
+export interface TrendData {
+  trend: TrendPoint[];
+  change_pct: number;
+  direction: "up" | "down" | "stable";
+  total_scans: number;
+  first_scan_cost: number;
+  latest_cost: number;
+}
+
+export interface RepoHistory {
+  github_url: string;
+  scans: ScanSummary[];
+  trend: TrendData;
+  total_scans: number;
+}
+
+export interface RepositorySummary {
+  github_url: string;
+  repo_name: string;
+  repo_owner: string;
+  last_scanned: string | null;
+  latest_cost: number | null;
+  latest_score: number | null;
+  total_scans: number;
+  language: string | null;
+}

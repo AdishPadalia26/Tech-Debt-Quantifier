@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { startAnalysis } from '@/lib/api';
 
 interface Props {
-  onJobStarted: (jobId: string) => void;
+  onJobStarted: (jobId: string, githubUrl: string) => void;
 }
 
 export default function AnalyzeForm({ onJobStarted }: Props) {
@@ -26,7 +26,7 @@ export default function AnalyzeForm({ onJobStarted }: Props) {
     
     try {
       const response = await startAnalysis(url.trim());
-      onJobStarted(response.job_id);
+      onJobStarted(response.job_id, url.trim());
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { detail?: string } } };
       setError(axiosErr.response?.data?.detail || 'Failed to start analysis');

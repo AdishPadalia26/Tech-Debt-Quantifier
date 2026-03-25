@@ -199,94 +199,98 @@ class RepoProfiler:
 
         return deps
 
-    def profile_team(self, repo_path: str) -> dict[str, Any]:
-        """Profile the development team using git history.
+    def profile_team(self, repo_path: str) -> dict:
+        import logging
+        logger = logging.getLogger(__name__)
         
-        Args:
-            repo_path: Path to repository
-            
-        Returns:
-            Team profile with size, activity, bus factor
-        """
-        cache_key = self._cache.make_key("team_profile", repo_path)
-
-        if self._cache.is_fresh(cache_key, "repo_profile"):
-            cached = self._cache.get(cache_key, "repo_profile")
-            if cached and "team" in cached:
-                return cached["team"]
-
+        # Verify repo path exists and has git history
+        git_dir = os.path.join(repo_path, '.git')
+        if not os.path.exists(git_dir):
+            logger.warning(f"No .git found at {repo_path}")
+            return self._default_team_profile()
+        
+        logger.info(f"Profiling team for repo at: {repo_path}")
+        
         try:
-            repo = Repository(repo_path, num_workers=1)
-            commits = list(repo.traverse_commits())
-
+            from pydriller import Repository
+            
+            commits = list(Repository(repo_path).traverse_commits())
+            logger.info(f"Found {len(commits)} total commits")
+            
             if not commits:
                 return self._default_team_profile()
-
-            author_commits: Counter[str] = Counter()
-            all_authors = set()
-            dates = []
-
-            for commit in commits:
-                author = commit.author.email
-                author_commits[author] += 1
-                all_authors.add(author)
-                dates.append(commit.author_date)
-
-            dates.sort()
-            repo_age_days = (datetime.now() - dates[0]).days if dates else 0
-
+            
+            # All unique authors ever
+            all_emails = set(c.author.email for c in commits 
+                            if c.author and c.author.email)
+            
+            # Active authors = last 90 days
+            from datetime import datetime, timedelta
             cutoff = datetime.now() - timedelta(days=90)
-            active_authors = {
-                a for c in commits
-                if c.author_date > cutoff
-                for a in [c.author.email]
-            }
-
+            active_emails = set(
+                c.author.email for c in commits
+                if c.author and c.author.email 
+                and c.author_date and c.author_date.replace(tzinfo=None) > cutoff
+            )
+            
+            # Repo age
+            first_commit = commits[0]
+            last_commit = commits[-1]
+            repo_age_days = (
+                last_commit.author_date - first_commit.author_date
+            ).days if first_commit.author_date and last_commit.author_date else 365
+            
+            # Bus factor: authors covering 80% of commits
+            from collections import Counter
+            author_commits = Counter(
+                c.author.email for c in commits if c.author
+            )
             total_commits = len(commits)
+            sorted_authors = author_commits.most_common()
+            
             cumulative = 0
             bus_factor = 0
-            for author, count in author_commits.most_common():
+            for author, count in sorted_authors:
                 cumulative += count
                 bus_factor += 1
-                if cumulative >= total_commits * 0.8:
+                if cumulative / total_commits >= 0.8:
                     break
-
-            commits_last_6mo = len([
-                c for c in commits
-                if c.author_date > datetime.now() - timedelta(days=180)
-            ])
-            commits_per_week = commits_last_6mo / 26 if repo_age_days >= 180 else 0
-
-            result = {
-                "unique_authors": len(all_authors),
-                "active_authors": len(active_authors),
-                "estimated_team_size": len(all_authors),
-                "active_contributors": len(active_authors),
+            
+            team_size = len(all_emails)
+            logger.info(f"Team: {team_size} total, {len(active_emails)} active, "
+                       f"bus_factor={bus_factor}, age={repo_age_days}d")
+            
+            return {
+                "estimated_team_size": team_size,
+                "unique_authors": team_size,
+                "team_size": team_size,
+                "active_contributors": len(active_emails),
+                "active_authors": len(active_emails),
                 "bus_factor": bus_factor,
-                "commit_frequency_per_week": round(commits_per_week, 2),
                 "repo_age_days": repo_age_days,
-                "is_solo": bus_factor == 1,
                 "total_commits": total_commits,
+                "is_solo": bus_factor == 1,
+                "commit_frequency": round(total_commits / max(repo_age_days/7, 1), 1)
             }
-
-            return result
-
+            
         except Exception as e:
-            logger.warning(f"Error profiling team: {e}")
+            logger.error(f"Team profiling failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return self._default_team_profile()
 
-    def _default_team_profile(self) -> dict[str, Any]:
-        """Return default team profile when git mining fails."""
+    def _default_team_profile(self) -> dict:
         return {
-            "unique_authors": 1,
-            "active_authors": 1,
             "estimated_team_size": 1,
+            "unique_authors": 1,
+            "team_size": 1,
             "active_contributors": 1,
+            "active_authors": 1,
             "bus_factor": 1,
-            "commit_frequency_per_week": 0,
             "repo_age_days": 365,
-            "is_solo": True,
             "total_commits": 0,
+            "is_solo": True,
+            "commit_frequency": 1.0
         }
 
     def get_stack_specific_rates(self, tech_stack: dict) -> dict[str, Any]:
@@ -402,85 +406,55 @@ class RepoProfiler:
 
         return result
 
-    def calculate_multipliers(self, profile: dict) -> dict[str, Any]:
-        """Calculate repository-specific cost multipliers.
+    def calculate_multipliers(self, team_profile: dict) -> dict:
+        repo_age_days = team_profile.get('repo_age_days', 365)
+        bus_factor = team_profile.get('bus_factor', 1)
+        team_size = team_profile.get('estimated_team_size', 1)
         
-        Args:
-            profile: Combined profile from detect_tech_stack and profile_team
-            
-        Returns:
-            Multipliers for each factor and combined
-        """
-        team = profile.get("team", {})
-        tech = profile.get("tech_stack", {})
-        ai_det = profile.get("ai_detection", {})
-
-        bus_factor = team.get("bus_factor", 10)
+        # Repo age multiplier
+        if repo_age_days > 3650:      # > 10 years
+            repo_age_mult = 1.4
+        elif repo_age_days > 2000:    # > 5.5 years
+            repo_age_mult = 1.3
+        elif repo_age_days > 1000:    # > 2.7 years
+            repo_age_mult = 1.1
+        elif repo_age_days < 180:     # < 6 months (new project)
+            repo_age_mult = 0.8
+        else:
+            repo_age_mult = 1.0
+        
+        # Bus factor multiplier
         if bus_factor == 1:
-            bus_multiplier = 2.0
+            bus_factor_mult = 2.0
         elif bus_factor == 2:
-            bus_multiplier = 1.5
+            bus_factor_mult = 1.5
         elif bus_factor <= 4:
-            bus_multiplier = 1.2
+            bus_factor_mult = 1.2
         else:
-            bus_multiplier = 1.0
-
-        repo_age = team.get("repo_age_days", 365)
-        if repo_age > 2000:
-            age_multiplier = 1.3
-        elif repo_age > 1000:
-            age_multiplier = 1.1
-        elif repo_age < 365:
-            age_multiplier = 0.9
-        else:
-            age_multiplier = 1.0
-
-        team_size = team.get("unique_authors", 1)
-        if team_size == 1:
-            size_multiplier = 1.5
-        elif team_size <= 3:
-            size_multiplier = 1.2
-        elif team_size <= 10:
-            size_multiplier = 1.0
-        else:
-            size_multiplier = 0.9
-
-        uses_ai = tech.get("uses_ai", False)
-        has_tests = tech.get("has_tests", False)
-        ai_files = ai_det.get("total_suspected", 0)
-        total_files = ai_det.get("total_suspected", 0)
-
-        if uses_ai and not has_tests:
-            ai_multiplier = 1.4
-        elif uses_ai:
-            ai_multiplier = 1.1
-        else:
-            ai_multiplier = 1.0
-
-        test_multiplier = 1.3 if not has_tests else 1.0
-
-        combined = (
-            bus_multiplier
-            * age_multiplier
-            * size_multiplier
-            * ai_multiplier
-            * test_multiplier
-        )
+            bus_factor_mult = 1.0
         
-        combined = min(combined, 1.8)
-
+        # Team size multiplier
+        if team_size == 1:
+            team_size_mult = 1.5
+        elif team_size <= 3:
+            team_size_mult = 1.2
+        elif team_size <= 10:
+            team_size_mult = 1.0
+        else:
+            team_size_mult = 0.9   # larger teams = better knowledge sharing
+        
+        combined = round(repo_age_mult * bus_factor_mult * team_size_mult, 2)
+        
         return {
-            "bus_factor_multiplier": bus_multiplier,
-            "repo_age_multiplier": age_multiplier,
-            "team_size_multiplier": size_multiplier,
-            "ai_code_multiplier": ai_multiplier,
-            "no_tests_multiplier": test_multiplier,
-            "combined_multiplier": round(combined, 3),
+            "repo_age_multiplier": repo_age_mult,
+            "bus_factor_multiplier": bus_factor_mult,
+            "team_size_multiplier": team_size_mult,
+            "ai_code_multiplier": 1.0,
+            "no_tests_multiplier": 1.0,
+            "combined_multiplier": combined,
+            "repo_age_days": repo_age_days,
             "bus_factor": bus_factor,
-            "repo_age_days": repo_age,
             "team_size": team_size,
-            "uses_ai": uses_ai,
-            "has_tests": has_tests,
         }
 
     def detect_ai_generated_code(self, repo_path: str) -> dict[str, Any]:
@@ -669,7 +643,7 @@ class RepoProfiler:
             "profiled_at": datetime.now().isoformat(),
         }
 
-        profile["multipliers"] = self.calculate_multipliers(profile)
+        profile["multipliers"] = self.calculate_multipliers(team)
 
         cache_key = self._cache.make_key("full_profile", repo_path)
         self._cache.set(cache_key, "repo_profile", profile)
