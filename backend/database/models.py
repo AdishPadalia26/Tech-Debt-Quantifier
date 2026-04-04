@@ -1,6 +1,7 @@
 """SQLAlchemy models for scan persistence and debt history."""
 
 import uuid
+from datetime import datetime
 
 from sqlalchemy import (
     Column,
@@ -25,6 +26,24 @@ def generate_uuid() -> str:
     return str(uuid.uuid4())
 
 
+class User(Base):
+    """GitHub OAuth user."""
+
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    github_id = Column(String, unique=True, index=True, nullable=False)
+    login = Column(String, index=True)
+    name = Column(String)
+    avatar_url = Column(String)
+    html_url = Column(String)
+    email = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    repositories = relationship("Repository", back_populates="owner")
+    scans = relationship("Scan", back_populates="user")
+
+
 class Repository(Base):
     """A GitHub repository being tracked."""
 
@@ -32,13 +51,15 @@ class Repository(Base):
 
     id = Column(String, primary_key=True, default=generate_uuid)
     github_url = Column(String, unique=True, nullable=False, index=True)
-    repo_name = Column(String, nullable=False)  # e.g. "flask"
-    repo_owner = Column(String, nullable=False)  # e.g. "pallets"
+    repo_name = Column(String, nullable=False)
+    repo_owner = Column(String, nullable=False)
     primary_language = Column(String)
     created_at = Column(DateTime, server_default=func.now())
     last_scanned_at = Column(DateTime)
 
-    # Relationships
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    owner = relationship("User", back_populates="repositories")
+
     scans = relationship(
         "Scan",
         back_populates="repository",
@@ -56,6 +77,9 @@ class Scan(Base):
         String, ForeignKey("repositories.id"), nullable=False, index=True
     )
     job_id = Column(String, unique=True, index=True)
+
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    user = relationship("User", back_populates="scans")
 
     # Core metrics
     total_cost_usd = Column(Float, nullable=False, default=0.0)

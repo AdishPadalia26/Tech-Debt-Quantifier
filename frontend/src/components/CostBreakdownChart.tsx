@@ -16,12 +16,12 @@ const COLORS = {
 
 export default function CostBreakdownChart({ costByCategory = {} }: Props) {
   const data = Object.entries(costByCategory)
-    .filter(([, v]) => v.cost_usd > 0)
+    .filter(([, v]) => v && typeof v === 'object' && (v.cost_usd ?? 0) > 0)
     .map(([key, value]) => ({
-      name: key.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()),
-      value: Math.round(value.cost_usd),
-      hours: value.hours.toFixed(1),
-      items: value.item_count,
+      name: key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+      value: Math.round(value.cost_usd ?? 0),
+      hours: (value.hours ?? 0).toFixed(1),
+      items: value.item_count ?? 0,
       key,
     }));
 

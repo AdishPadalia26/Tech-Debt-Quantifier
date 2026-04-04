@@ -55,16 +55,19 @@ export interface RepoProfile {
 }
 
 export interface DebtReport {
-  repo_path: string;
-  analysis_timestamp: string;
-  total_cost_usd: number;
-  total_remediation_hours: number;
-  total_remediation_sprints: number;
-  debt_score: number;
-  cost_by_category: Record<string, CostByCategory>;
-  debt_items: DebtItem[];
-  repo_profile: RepoProfile;
-  sanity_check: {
+  job_id?: string;
+  status?: string;
+  scan_id?: string;
+  repo_path?: string;
+  analysis_timestamp?: string;
+  total_cost_usd?: number;
+  total_remediation_hours?: number;
+  total_remediation_sprints?: number;
+  debt_score?: number;
+  cost_by_category?: Record<string, CostByCategory>;
+  debt_items?: DebtItem[];
+  repo_profile?: RepoProfile;
+  sanity_check?: {
     your_cost_per_function: number;
     industry_avg: number;
     variance_pct: number;
@@ -74,11 +77,13 @@ export interface DebtReport {
   executive_summary?: string;
   priority_actions?: PriorityAction[];
   roi_analysis?: ROIAnalysis;
-  data_sources_used: string[];
-  hourly_rates: {
+  data_sources_used?: string[];
+  hourly_rates?: {
     blended_rate: number;
     confidence: string;
   };
+  raw_analysis?: DebtReport;
+  raw?: any;
 }
 
 export interface PriorityAction {
@@ -104,9 +109,25 @@ export interface ROIAnalysis {
 export interface JobResult {
   job_id: string;
   status: "queued" | "running" | "complete" | "failed";
-  report?: string;
-  raw?: DebtReport;
+  scan_id?: string;
   error?: string;
+  // Flat keys (normalized response)
+  debt_score?: number;
+  total_cost_usd?: number;
+  total_remediation_hours?: number;
+  total_remediation_sprints?: number;
+  cost_by_category?: Record<string, CostByCategory>;
+  debt_items?: DebtItem[];
+  executive_summary?: string;
+  priority_actions?: PriorityAction[];
+  roi_analysis?: ROIAnalysis;
+  sanity_check?: DebtReport['sanity_check'];
+  hourly_rates?: DebtReport['hourly_rates'];
+  repo_profile?: RepoProfile;
+  data_sources_used?: string[];
+  // Nested for backward compat
+  raw_analysis?: DebtReport;
+  raw?: any;
 }
 
 // ─── History & Trend Types ───────────────────────────────────

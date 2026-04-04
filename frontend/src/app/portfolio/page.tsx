@@ -5,6 +5,23 @@ import Link from 'next/link';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+function getToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return window.localStorage.getItem('tdq_token');
+}
+
+async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  const token = getToken();
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+    ...(options.headers || {}),
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return fetch(url, { ...options, headers });
+}
+
 interface RepoSummary {
   repo_id: string;
   github_url: string;
@@ -58,8 +75,8 @@ export default function PortfolioPage() {
   const fetchData = useCallback(async () => {
     try {
       const [pr, ps] = await Promise.all([
-        fetch(`${API}/portfolio`).then(r => r.json()),
-        fetch(`${API}/portfolio/summary`).then(r => r.json()),
+        authFetch(`${API}/portfolio`).then(r => r.json()),
+        authFetch(`${API}/portfolio/summary`).then(r => r.json()),
       ]);
       setRepos(pr.repos || []);
       setSummary(ps);
@@ -88,7 +105,7 @@ export default function PortfolioPage() {
     setScanning(url);
     try {
       const repoId = url.replace('https://github.com/', '');
-      const r = await fetch(`${API}/analyze`, {
+      const r = await authFetch(`${API}/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ github_url: url, repo_id: repoId }),
@@ -103,7 +120,7 @@ export default function PortfolioPage() {
 
   const handleRemove = async (repoId: string) => {
     if (!confirm(`Remove ${repoId} from portfolio?`)) return;
-    await fetch(`${API}/portfolio/${repoId}`, { method: 'DELETE' });
+    await authFetch(`${API}/portfolio/${repoId}`, { method: 'DELETE' });
     fetchData();
   };
 
@@ -114,18 +131,16 @@ export default function PortfolioPage() {
     try {
       const url = newRepo.trim();
       const repoId = url.replace('https://github.com/', '');
-      const r = await fetch(`${API}/analyze`, {
+      const r = await authFetch(`${API}/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ github_url: url, repo_id: repoId }),
       });
       if (r.ok) {
         setNewRepo('');
-        // Poll portfolio every 30s until new repo appears
         const pollInterval = setInterval(async () => {
           await fetchData();
         }, 30000);
-        // Stop polling after 10 minutes
         setTimeout(() => clearInterval(pollInterval), 600000);
         alert('Scan started! This page will refresh automatically every 30s.');
       }

@@ -38,3 +38,6 @@ flower
 duckduckgo-search
 beautifulsoup4
 lxml
+slack-sdk
+jira
+python-jose[cryptography]

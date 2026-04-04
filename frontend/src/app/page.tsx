@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import AnalyzeForm from '@/components/AnalyzeForm';
 import ProgressBar from '@/components/ProgressBar';
@@ -21,6 +21,17 @@ export default function Home() {
   const [repoHistory, setRepoHistory] = useState<RepoHistory | null>(null);
   const [currentGithubUrl, setCurrentGithubUrl] = useState('');
   const [downloading, setDownloading] = useState(false);
+  const [slackSending, setSlackSending] = useState(false);
+  const [slackSent, setSlackSent] = useState(false);
+  const [jiraCreating, setJiraCreating] = useState(false);
+  const [jiraResult, setJiraResult] = useState<{
+    epic_url?: string;
+    total_created?: number;
+  } | null>(null);
+  const [integrations, setIntegrations] = useState<{
+    slack: { configured: boolean; channel: string };
+    jira: { configured: boolean; server: string; project: string };
+  } | null>(null);
 
   const handleJobStarted = (id: string, githubUrl?: string) => {
     setJobId(id);
@@ -37,17 +48,15 @@ export default function Home() {
       setAppState('error');
       return;
     }
-    if (jobResult.raw) {
-      setResult(jobResult.raw);
-      setAppState('complete');
+    setResult(jobResult);
+    setAppState('complete');
 
-      // Fetch scan history for trend chart
-      try {
-        const history = await getRepoHistory(currentGithubUrl);
-        setRepoHistory(history);
-      } catch (e) {
-        console.log('History not available yet:', e);
-      }
+    // Fetch scan history for trend chart
+    try {
+      const history = await getRepoHistory(currentGithubUrl);
+      setRepoHistory(history);
+    } catch (e) {
+      console.log('History not available yet:', e);
     }
   };
 
@@ -81,6 +90,49 @@ export default function Home() {
     setJobId('');
     setResult(null);
     setError('');
+  };
+
+  useEffect(() => {
+    fetch(`${process.env.NEXT_PUBLIC_API_URL}/integrations/status`)
+      .then(r => r.json())
+      .then(setIntegrations)
+      .catch(console.error);
+  }, []);
+
+  const handleSendSlack = async () => {
+    if (!jobId) return;
+    setSlackSending(true);
+    try {
+      const r = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/report/${jobId}/slack`,
+        { method: 'POST' }
+      );
+      if (!r.ok) throw new Error(await r.text());
+      setSlackSent(true);
+      setTimeout(() => setSlackSent(false), 4000);
+    } catch (err) {
+      console.error('Slack failed:', err);
+    } finally {
+      setSlackSending(false);
+    }
+  };
+
+  const handleCreateJira = async () => {
+    if (!jobId) return;
+    setJiraCreating(true);
+    try {
+      const r = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/report/${jobId}/jira`,
+        { method: 'POST' }
+      );
+      if (!r.ok) throw new Error(await r.text());
+      const data = await r.json();
+      setJiraResult(data);
+    } catch (err) {
+      console.error('Jira failed:', err);
+    } finally {
+      setJiraCreating(false);
+    }
   };
 
   return (
@@ -209,7 +261,8 @@ export default function Home() {
             )}
 
             {/* PDF Download Button */}
-            <div className="flex justify-end">
+            <div className="flex flex-wrap gap-3 justify-end mt-4">
+              {/* PDF Button */}
               <button
                 onClick={handleDownloadPDF}
                 disabled={downloading}
@@ -228,7 +281,68 @@ export default function Home() {
                   <>📄 Download PDF Report</>
                 )}
               </button>
+
+              {/* Slack Button */}
+              {integrations?.slack?.configured && (
+                <button
+                  onClick={handleSendSlack}
+                  disabled={slackSending || slackSent}
+                  className="flex items-center gap-2 px-5 py-2.5 
+                             bg-[#4A154B] hover:bg-[#611f69]
+                             disabled:bg-gray-600 disabled:cursor-not-allowed
+                             text-white font-medium rounded-lg 
+                             transition-colors text-sm"
+                >
+                  {slackSent
+                    ? '✅ Sent to Slack!'
+                    : slackSending
+                    ? '⏳ Sending...'
+                    : `📨 Send to Slack ${integrations.slack.channel}`}
+                </button>
+              )}
+
+              {/* Jira Button */}
+              {integrations?.jira?.configured && (
+                <button
+                  onClick={handleCreateJira}
+                  disabled={jiraCreating || !!jiraResult}
+                  className="flex items-center gap-2 px-5 py-2.5 
+                             bg-[#0052CC] hover:bg-[#0065FF]
+                             disabled:bg-gray-600 disabled:cursor-not-allowed
+                             text-white font-medium rounded-lg 
+                             transition-colors text-sm"
+                >
+                  {jiraResult
+                    ? `✅ ${jiraResult.total_created} Jira tickets created`
+                    : jiraCreating
+                    ? '⏳ Creating tickets...'
+                    : `🎫 Create Jira Tickets (${integrations.jira.project})`}
+                </button>
+              )}
+
+              {/* Jira epic link */}
+              {jiraResult?.epic_url && (
+                <a
+                  href={jiraResult.epic_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-sm 
+                             text-blue-400 hover:text-blue-300
+                             underline underline-offset-2"
+                >
+                  View Epic in Jira ↗
+                </a>
+              )}
             </div>
+
+            {/* Unconfigured hint */}
+            {integrations && !integrations.slack.configured
+                && !integrations.jira.configured && (
+              <p className="text-xs text-gray-500 mt-2 text-right">
+                Add SLACK_BOT_TOKEN or JIRA_API_TOKEN to .env
+                to enable integrations
+              </p>
+            )}
 
             {/* Score Cards */}
             <DebtScoreCard
@@ -275,6 +389,25 @@ export default function Home() {
                 </span>
               </p>
             </div>
+
+            {/* Debug overlay */}
+            {process.env.NODE_ENV === 'development' && (
+              <details className="mt-8 bg-gray-900 rounded-lg p-4 border border-gray-700">
+                <summary className="text-xs text-gray-400 cursor-pointer">
+                  🛠 Debug: raw values
+                </summary>
+                <pre className="text-xs text-gray-300 mt-3 overflow-auto max-h-64">
+                  {JSON.stringify({
+                    debt_score: result.debt_score,
+                    total_cost_usd: result.total_cost_usd,
+                    total_remediation_hours: result.total_remediation_hours,
+                    cost_by_category_keys: Object.keys(result.cost_by_category || {}),
+                    priority_actions_count: result.priority_actions?.length,
+                    exec_summary_preview: result.executive_summary?.slice(0, 80),
+                  }, null, 2)}
+                </pre>
+              </details>
+            )}
           </div>
         )}
       </div>

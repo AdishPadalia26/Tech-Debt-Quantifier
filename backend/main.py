@@ -9,10 +9,14 @@ import traceback
 from datetime import datetime
 from typing import Dict, Any
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, RedirectResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from dotenv import load_dotenv
+from urllib.parse import urlencode
+import httpx
+from jose import jwt, JWTError
 
 load_dotenv()
 
@@ -24,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 from models.schemas import AnalyzeRequest, AnalyzeResponse
 from database.connection import DB_AVAILABLE, SessionLocal, engine
-from database.models import Base
+from database.models import Base, User
 from database.crud import (
     save_scan,
     get_scan_history,
@@ -42,6 +46,17 @@ except Exception as e:
     logger.error(traceback.format_exc())
 
 jobs: Dict[str, Any] = {}
+
+GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
+GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
+GITHUB_OAUTH_CALLBACK_URL = os.getenv("GITHUB_OAUTH_CALLBACK_URL", "")
+JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret")
+JWT_ALG = os.getenv("JWT_ALG", "HS256")
+FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:3000")
+
+GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
+GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
+GITHUB_API_USER_URL = "https://api.github.com/user"
 
 
 def normalize_repo_id(github_url: str) -> str:
@@ -78,6 +93,126 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+auth_scheme = HTTPBearer(auto_error=False)
+
+
+def get_current_user(
+    creds: HTTPAuthorizationCredentials = Depends(auth_scheme),
+) -> User:
+    """Get current authenticated user from JWT token."""
+    if not creds:
+        raise HTTPException(401, "Not authenticated")
+
+    token = creds.credentials
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
+        user_id = int(payload.get("sub"))
+    except JWTError:
+        raise HTTPException(401, "Invalid token")
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).get(user_id)
+        if not user:
+            raise HTTPException(401, "User not found")
+        return user
+    finally:
+        db.close()
+
+
+@app.get("/auth/github/login")
+async def github_login():
+    """Redirect to GitHub OAuth authorization page."""
+    if not GITHUB_CLIENT_ID or not GITHUB_OAUTH_CALLBACK_URL:
+        raise HTTPException(500, "GitHub OAuth not configured")
+
+    params = {
+        "client_id": GITHUB_CLIENT_ID,
+        "redirect_uri": GITHUB_OAUTH_CALLBACK_URL,
+        "scope": "read:user user:email",
+        "allow_signup": "true",
+    }
+    url = f"{GITHUB_AUTHORIZE_URL}?{urlencode(params)}"
+    return RedirectResponse(url)
+
+
+@app.get("/auth/github/callback")
+async def github_callback(code: str | None = None, request: Request = None):
+    """Handle GitHub OAuth callback, create JWT and redirect to frontend."""
+    if not code:
+        raise HTTPException(400, "Missing code")
+
+    async with httpx.AsyncClient() as client:
+        token_resp = await client.post(
+            GITHUB_TOKEN_URL,
+            headers={"Accept": "application/json"},
+            data={
+                "client_id": GITHUB_CLIENT_ID,
+                "client_secret": GITHUB_CLIENT_SECRET,
+                "code": code,
+                "redirect_uri": GITHUB_OAUTH_CALLBACK_URL,
+            },
+        )
+        token_data = token_resp.json()
+        access_token = token_data.get("access_token")
+        if not access_token:
+            raise HTTPException(400, "Failed to get access token")
+
+        user_resp = await client.get(
+            GITHUB_API_USER_URL,
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github+json",
+            },
+        )
+        gh = user_resp.json()
+
+    db = SessionLocal()
+    try:
+        github_id = str(gh.get("id"))
+        if not github_id:
+            raise HTTPException(400, "Invalid GitHub user")
+
+        user = db.query(User).filter(User.github_id == github_id).first()
+        if not user:
+            user = User(
+                github_id=github_id,
+                login=gh.get("login"),
+                name=gh.get("name"),
+                avatar_url=gh.get("avatar_url"),
+                html_url=gh.get("html_url"),
+                email=gh.get("email"),
+            )
+            db.add(user)
+        else:
+            user.login = gh.get("login")
+            user.name = gh.get("name")
+            user.avatar_url = gh.get("avatar_url")
+            user.html_url = gh.get("html_url")
+
+        db.commit()
+        db.refresh(user)
+    finally:
+        db.close()
+
+    token_payload = {"sub": str(user.id), "login": user.login}
+    jwt_token = jwt.encode(token_payload, JWT_SECRET, algorithm=JWT_ALG)
+
+    redirect_url = f"{FRONTEND_ORIGIN}/auth/callback#token={jwt_token}"
+    return RedirectResponse(redirect_url)
+
+
+@app.get("/me")
+async def get_me(user: User = Depends(get_current_user)):
+    """Get current user info."""
+    return {
+        "id": user.id,
+        "login": user.login,
+        "name": user.name,
+        "avatar_url": user.avatar_url,
+        "html_url": user.html_url,
+    }
 
 
 @app.on_event("startup")
@@ -123,6 +258,7 @@ async def detailed_health() -> dict:
 async def analyze_repo(
     request: AnalyzeRequest,
     background_tasks: BackgroundTasks,
+    user: User = Depends(get_current_user),
 ) -> AnalyzeResponse:
     """Start async analysis of a GitHub repo."""
 
@@ -140,15 +276,17 @@ async def analyze_repo(
         "result": None,
         "error": None,
         "github_url": request.github_url,
+        "user_id": user.id,
     }
 
-    logger.info(f"Job {job_id} queued for {request.github_url}")
+    logger.info(f"Job {job_id} queued for {request.github_url} (user: {user.id})")
 
     background_tasks.add_task(
         run_analysis_job,
         job_id,
         request.github_url,
         repo_id,
+        user.id,
     )
 
     return AnalyzeResponse(
@@ -158,7 +296,7 @@ async def analyze_repo(
     )
 
 
-async def run_analysis_job(job_id: str, github_url: str, repo_id: str) -> None:
+async def run_analysis_job(job_id: str, github_url: str, repo_id: str, user_id: int | None = None) -> None:
     """Background task — runs full agent pipeline, saves to DB."""
     start_time = time.time()
     try:
@@ -184,6 +322,7 @@ async def run_analysis_job(job_id: str, github_url: str, repo_id: str) -> None:
                     analysis=analysis_data,
                     agent_state=result,
                     duration_seconds=duration,
+                    user_id=user_id,
                 )
                 jobs[job_id]["scan_id"] = saved_scan.id
                 logger.info(f"Scan saved to DB: {saved_scan.id}")
@@ -213,17 +352,130 @@ async def get_results(job_id: str) -> dict:
 
     if job["status"] == "complete":
         result = job["result"]
-        return {
-            "job_id": job_id,
-            "status": "complete",
-            "scan_id": job.get("scan_id"),
-            "raw": result,
-        }
+        return _normalize_result_payload(job_id, "complete", job.get("scan_id"), result)
 
     if job["status"] == "failed":
         return {"job_id": job_id, "status": "failed", "error": job.get("error")}
 
     return {"job_id": job_id, "status": job["status"]}
+
+
+def _normalize_result_payload(job_id: str, status: str, scan_id: str | None, state: dict) -> dict:
+    if not isinstance(state, dict):
+        state = {}
+
+    result = state.get("result", {}) if isinstance(state, dict) else {}
+    
+    raw_analysis = (
+        result.get("raw_analysis") or
+        state.get("raw_analysis") or
+        result or
+        state or
+        {}
+    )
+
+    priority_actions = (
+        result.get("priority_actions") or
+        state.get("priority_actions") or
+        []
+    )
+
+    executive_summary = (
+        result.get("executive_summary") or
+        state.get("executive_summary") or
+        ""
+    )
+
+    roi_analysis = (
+        result.get("roi_analysis") or
+        state.get("roi_analysis") or
+        {}
+    )
+
+    return {
+        "job_id": job_id,
+        "status": status,
+        "scan_id": scan_id,
+        "debt_score": raw_analysis.get("debt_score") or 0,
+        "total_cost_usd": raw_analysis.get("total_cost_usd") or 0,
+        "total_remediation_hours": raw_analysis.get("total_remediation_hours") or 0,
+        "total_remediation_sprints": raw_analysis.get("total_remediation_sprints") or 0,
+        "cost_by_category": raw_analysis.get("cost_by_category") or {},
+        "debt_items": raw_analysis.get("debt_items") or [],
+        "executive_summary": executive_summary,
+        "priority_actions": priority_actions,
+        "roi_analysis": roi_analysis,
+        "sanity_check": raw_analysis.get("sanity_check") or {},
+        "hourly_rates": raw_analysis.get("hourly_rates") or {},
+        "repo_profile": raw_analysis.get("repo_profile") or {},
+        "data_sources_used": raw_analysis.get("data_sources_used") or [],
+        "raw_analysis": raw_analysis,
+        "raw": state,
+    }
+
+
+@app.get("/debug/results/{job_id}")
+async def debug_results(job_id: str):
+    """Return the raw result JSON for a job_id without any transformation."""
+    if job_id in jobs:
+        return jobs[job_id]
+
+    from database.connection import SessionLocal
+    from database.models import Scan
+
+    db = SessionLocal()
+    scan = db.query(Scan).filter(Scan.job_id == job_id).first()
+    db.close()
+
+    if not scan:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    return scan.raw_result
+
+
+@app.get("/debug/raw/{job_id}")
+async def debug_raw(job_id: str):
+    """
+    Return exactly what is in the DB for this job, zero transformation.
+    """
+    from database.connection import SessionLocal
+    from database.models import Scan
+
+    db = SessionLocal()
+    scan = db.query(Scan).filter(Scan.job_id == job_id).first()
+    db.close()
+
+    if not scan:
+        if job_id in jobs:
+            return {
+                "source": "memory",
+                "status": jobs[job_id].get("status"),
+                "result_keys": list((jobs[job_id].get("result") or {}).keys()),
+                "raw_analysis_keys": list(
+                    (jobs[job_id].get("result") or {})
+                    .get("raw_analysis", {}).keys()
+                ),
+                "full": jobs[job_id].get("result"),
+            }
+        return {"error": "not found"}
+
+    raw = scan.raw_result or {}
+    return {
+        "source": "database",
+        "job_id": job_id,
+        "debt_score_column": scan.debt_score,
+        "total_cost_column": scan.total_cost_usd,
+        "remediation_hours_column": scan.remediation_hours,
+        "raw_result_keys": list(raw.keys()),
+        "raw_analysis_keys": list((raw.get("raw_analysis") or {}).keys()),
+        "raw_analysis_snapshot": {
+            "debt_score": raw.get("raw_analysis", {}).get("debt_score"),
+            "total_cost_usd": raw.get("raw_analysis", {}).get("total_cost_usd"),
+            "total_remediation_hours": raw.get("raw_analysis", {}).get("total_remediation_hours"),
+            "cost_by_category": raw.get("raw_analysis", {}).get("cost_by_category"),
+        },
+        "priority_actions": (raw.get("priority_actions") or [])[:2],
+    }
 
 
 @app.get("/jobs")
@@ -244,10 +496,8 @@ async def list_jobs() -> dict:
 
 
 @app.get("/history/{repo_url:path}")
-async def get_repo_history(repo_url: str):
+async def get_repo_history(repo_url: str, user: User = Depends(get_current_user)):
     """Get scan history and trend for a repo."""
-    # repo_url comes in as: github.com/pallets/flask
-    # normalize to full URL
     if not repo_url.startswith("http"):
         repo_url = f"https://{repo_url}"
 
@@ -256,8 +506,8 @@ async def get_repo_history(repo_url: str):
 
     db = SessionLocal()
     try:
-        history = get_scan_history(db, repo_url, limit=10)
-        trend = get_debt_trend(db, repo_url)
+        history = get_scan_history(db, repo_url, user_id=user.id, limit=10)
+        trend = get_debt_trend(db, repo_url, user_id=user.id)
 
         scans = [
             {
@@ -284,21 +534,21 @@ async def get_repo_history(repo_url: str):
 
 
 @app.get("/repositories")
-async def list_repositories():
+async def list_repositories(user: User = Depends(get_current_user)):
     """List all tracked repositories with latest metrics."""
     if not DB_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available.")
 
     db = SessionLocal()
     try:
-        repos = get_all_repositories(db)
+        repos = get_all_repositories(db, user_id=user.id)
         return {"repositories": repos, "total": len(repos)}
     finally:
         db.close()
 
 
 @app.get("/scan/{scan_id}")
-async def get_scan(scan_id: str):
+async def get_scan(scan_id: str, user: User = Depends(get_current_user)):
     """Get a specific scan by ID."""
     if not DB_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available.")
@@ -307,7 +557,7 @@ async def get_scan(scan_id: str):
     try:
         from database.models import Scan
 
-        scan = db.query(Scan).filter(Scan.id == scan_id).first()
+        scan = db.query(Scan).filter(Scan.id == scan_id, Scan.user_id == user.id).first()
         if not scan:
             raise HTTPException(404, "Scan not found")
         return {
@@ -390,22 +640,21 @@ def _risk_level(score: float) -> str:
 
 
 @app.get("/portfolio")
-async def get_portfolio():
+async def get_portfolio(user: User = Depends(get_current_user)):
     """Return all repos ranked by debt score descending."""
     from database.connection import SessionLocal
     from database.models import Scan, Repository
 
     db = SessionLocal()
 
-    # Get ALL scans, then deduplicate using normalized repo key
     all_scans = (
         db.query(Scan)
+        .filter(Scan.user_id == user.id, Scan.status == "complete")
         .order_by(Scan.created_at.desc())
         .all()
     )
 
-    # Build repo lookup
-    repo_map = {r.id: r for r in db.query(Repository).all()}
+    repo_map = {r.id: r for r in db.query(Repository).filter(Repository.user_id == user.id).all()}
     db.close()
 
     # Deduplicate: keep only latest scan per normalized repo
@@ -463,7 +712,7 @@ async def get_portfolio():
 
 
 @app.get("/portfolio/summary")
-async def get_portfolio_summary():
+async def get_portfolio_summary(user: User = Depends(get_current_user)):
     """Aggregate stats across all tracked repos."""
     from database.connection import SessionLocal
     from database.models import Scan
@@ -477,9 +726,11 @@ async def get_portfolio_summary():
         func.sum(Scan.total_hours).label("total_hours"),
         func.max(Scan.debt_score).label("worst_score"),
         func.min(Scan.debt_score).label("best_score"),
-    ).first()
+    ).filter(Scan.user_id == user.id, Scan.status == "complete").first()
 
-    unique_repos = db.query(func.count(func.distinct(Scan.repository_id))).scalar()
+    unique_repos = db.query(func.count(func.distinct(Scan.repository_id))).filter(
+        Scan.user_id == user.id, Scan.status == "complete"
+    ).scalar()
 
     db.close()
 
@@ -495,7 +746,7 @@ async def get_portfolio_summary():
 
 
 @app.get("/portfolio/trends")
-async def get_portfolio_trends():
+async def get_portfolio_trends(user: User = Depends(get_current_user)):
     """Show debt score over time for all repos."""
     from database.connection import SessionLocal
     from database.models import Scan
@@ -508,6 +759,7 @@ async def get_portfolio_trends():
             Scan.total_cost_usd,
             Scan.created_at,
         )
+        .filter(Scan.user_id == user.id, Scan.status == "complete")
         .order_by(Scan.repository_id, Scan.created_at)
         .all()
     )
@@ -530,20 +782,23 @@ async def get_portfolio_trends():
 
 
 @app.delete("/portfolio/{repo_id:path}")
-async def remove_from_portfolio(repo_id: str):
+async def remove_from_portfolio(repo_id: str, user: User = Depends(get_current_user)):
     """Remove a repo from tracking."""
     from database.connection import SessionLocal
     from database.models import Scan
 
     db = SessionLocal()
-    deleted = db.query(Scan).filter(Scan.repository_id == repo_id).delete()
+    deleted = db.query(Scan).filter(
+        Scan.repository_id == repo_id,
+        Scan.user_id == user.id
+    ).delete()
     db.commit()
     db.close()
     return {"deleted_scans": deleted, "repo_id": repo_id}
 
 
 @app.get("/debug/scans")
-async def debug_scans():
+async def debug_scans(user: User = Depends(get_current_user)):
     """Show all scans in DB with their repo info."""
     from database.connection import SessionLocal
     from database.models import Scan, Repository
@@ -573,6 +828,90 @@ async def debug_scans():
             for s in scans
         ],
     }
+
+
+from integrations.slack_notifier import SlackNotifier
+from integrations.jira_client import JiraClient
+
+slack_notifier = SlackNotifier()
+jira_client = JiraClient()
+
+
+@app.get("/integrations/status")
+async def integrations_status():
+    """Check which integrations are configured."""
+    return {
+        "slack": {
+            "configured": slack_notifier.is_configured(),
+            "channel": slack_notifier.default_channel,
+        },
+        "jira": {
+            "configured": jira_client.is_configured(),
+            "server": jira_client.server,
+            "project": jira_client.project,
+        }
+    }
+
+
+@app.post("/report/{job_id}/slack")
+async def send_to_slack(
+    job_id: str,
+    channel: str = None
+):
+    """Send analysis result to Slack."""
+    result = _get_result(job_id)
+    if not result:
+        raise HTTPException(404, "Job not found or not complete")
+
+    outcome = slack_notifier.send_analysis_report(
+        result, channel=channel, job_id=job_id
+    )
+
+    if not outcome["ok"]:
+        raise HTTPException(400, outcome["error"])
+
+    return outcome
+
+
+@app.post("/report/{job_id}/jira")
+async def create_jira_tickets(
+    job_id: str,
+    max_tickets: int = 10,
+    min_severity: str = "medium",
+):
+    """Create Jira tickets for top debt items."""
+    result = _get_result(job_id)
+    if not result:
+        raise HTTPException(404, "Job not found or not complete")
+
+    outcome = jira_client.create_tickets_for_analysis(
+        result,
+        max_tickets=max_tickets,
+        min_severity=min_severity,
+    )
+
+    if not outcome.get("ok"):
+        raise HTTPException(400, outcome.get("error", "Unknown error"))
+
+    return outcome
+
+
+def _get_result(job_id: str) -> dict | None:
+    """Load result from memory or DB."""
+    if job_id in jobs:
+        job = jobs[job_id]
+        if job["status"] == "complete":
+            return job["result"]
+        return None
+
+    from database.connection import SessionLocal
+    from database.models import Scan
+    db = SessionLocal()
+    scan = db.query(Scan).filter(
+        Scan.job_id == job_id
+    ).first()
+    db.close()
+    return scan.raw_result if scan else None
 
 
 if __name__ == "__main__":

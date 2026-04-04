@@ -26,7 +26,7 @@ def _normalize_url(github_url: str) -> str:
     return url
 
 
-def get_or_create_repository(db: Session, github_url: str) -> Repository:
+def get_or_create_repository(db: Session, github_url: str, user_id: int | None = None) -> Repository:
     """Get existing repo or create new one."""
     normalized = _normalize_url(github_url)
     parts = normalized.rstrip("/").split("/")
@@ -42,11 +42,15 @@ def get_or_create_repository(db: Session, github_url: str) -> Repository:
             github_url=normalized,
             repo_name=name,
             repo_owner=owner,
+            user_id=user_id,
         )
         db.add(repo)
         db.commit()
         db.refresh(repo)
         logger.info(f"Created new repository: {normalized}")
+    elif user_id and not repo.user_id:
+        repo.user_id = user_id
+        db.commit()
 
     return repo
 
@@ -61,10 +65,11 @@ def save_scan(
     analysis: dict,
     agent_state: dict,
     duration_seconds: float = 0,
+    user_id: int | None = None,
 ) -> Scan:
     """Save a completed scan to the database."""
 
-    repo = get_or_create_repository(db, github_url)
+    repo = get_or_create_repository(db, github_url, user_id=user_id)
 
     # Extract data safely
     profile = analysis.get("repo_profile", {})
@@ -76,6 +81,7 @@ def save_scan(
     scan = Scan(
         repository_id=repo.id,
         job_id=job_id,
+        user_id=user_id,
         total_cost_usd=analysis.get("total_cost_usd", 0),
         debt_score=analysis.get("debt_score", 0),
         total_hours=analysis.get("total_remediation_hours", 0),
@@ -133,30 +139,46 @@ def save_scan(
 # ─── History Queries ─────────────────────────────────────────
 
 
-def get_scan_history(db: Session, github_url: str, limit: int = 10) -> list:
+def get_scan_history(db: Session, github_url: str, limit: int = 10, user_id: int | None = None) -> list:
     """Get last N scans for a repo, ordered newest first."""
     normalized = _normalize_url(github_url)
-    repo = db.query(Repository).filter(
-        Repository.github_url == normalized
-    ).first()
+    
+    if user_id:
+        repo = db.query(Repository).filter(
+            Repository.github_url == normalized,
+            Repository.user_id == user_id,
+        ).first()
+    else:
+        repo = db.query(Repository).filter(
+            Repository.github_url == normalized
+        ).first()
 
     if not repo:
         return []
 
-    scans = (
-        db.query(Scan)
-        .filter(Scan.repository_id == repo.id, Scan.status == "complete")
-        .order_by(desc(Scan.created_at))
-        .limit(limit)
-        .all()
-    )
+    if user_id:
+        scans = (
+            db.query(Scan)
+            .filter(Scan.repository_id == repo.id, Scan.status == "complete", Scan.user_id == user_id)
+            .order_by(desc(Scan.created_at))
+            .limit(limit)
+            .all()
+        )
+    else:
+        scans = (
+            db.query(Scan)
+            .filter(Scan.repository_id == repo.id, Scan.status == "complete")
+            .order_by(desc(Scan.created_at))
+            .limit(limit)
+            .all()
+        )
 
     return scans
 
 
-def get_debt_trend(db: Session, github_url: str) -> dict:
+def get_debt_trend(db: Session, github_url: str, user_id: int | None = None) -> dict:
     """Calculate debt trend across all scans. Returns trend data for charts."""
-    scans = get_scan_history(db, github_url, limit=20)
+    scans = get_scan_history(db, github_url, limit=20, user_id=user_id)
 
     if not scans:
         return {"trend": [], "change_pct": 0, "direction": "stable"}
@@ -195,20 +217,33 @@ def get_debt_trend(db: Session, github_url: str) -> dict:
     }
 
 
-def get_all_repositories(db: Session) -> list:
+def get_all_repositories(db: Session, user_id: int | None = None) -> list:
     """Get all tracked repos with their latest scan."""
-    repos = db.query(Repository).order_by(
-        desc(Repository.last_scanned_at)
-    ).all()
+    if user_id:
+        repos = db.query(Repository).filter(
+            Repository.user_id == user_id
+        ).order_by(desc(Repository.last_scanned_at)).all()
+    else:
+        repos = db.query(Repository).order_by(
+            desc(Repository.last_scanned_at)
+        ).all()
 
     result = []
     for repo in repos:
-        latest_scan = (
-            db.query(Scan)
-            .filter(Scan.repository_id == repo.id, Scan.status == "complete")
-            .order_by(desc(Scan.created_at))
-            .first()
-        )
+        if user_id:
+            latest_scan = (
+                db.query(Scan)
+                .filter(Scan.repository_id == repo.id, Scan.status == "complete", Scan.user_id == user_id)
+                .order_by(desc(Scan.created_at))
+                .first()
+            )
+        else:
+            latest_scan = (
+                db.query(Scan)
+                .filter(Scan.repository_id == repo.id, Scan.status == "complete")
+                .order_by(desc(Scan.created_at))
+                .first()
+            )
 
         result.append(
             {
