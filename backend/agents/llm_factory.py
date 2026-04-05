@@ -1,6 +1,6 @@
 """LLM factory for Tech Debt Quantifier.
 
-Supports HuggingFace API, local HuggingFace models, and OpenAI.
+Supports Ollama, HuggingFace API, local HuggingFace models, and OpenAI.
 """
 
 import logging
@@ -19,15 +19,33 @@ def get_llm(task: str = "default") -> BaseLLM:
     """
     provider = os.getenv("LLM_PROVIDER", "huggingface_api")
 
-    if provider == "huggingface_api":
+    if provider == "ollama":
+        return _get_ollama_llm(task)
+    elif provider == "huggingface_api":
         return _get_hf_api_llm(task)
     elif provider == "huggingface_local":
         return _get_hf_local_llm(task)
     elif provider == "openai":
         return _get_openai_llm()
     else:
-        logger.warning(f"Unknown provider {provider}, using HF API")
-        return _get_hf_api_llm(task)
+        logger.warning(f"Unknown provider {provider}, using Ollama")
+        return _get_ollama_llm(task)
+
+
+def _get_ollama_llm(task: str) -> BaseLLM:
+    """Use a local Ollama model through the OpenAI-compatible API."""
+    from langchain_openai import ChatOpenAI
+
+    model_name = os.getenv("OLLAMA_MODEL", "qwen3.5:latest")
+    base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+
+    logger.info(f"Using Ollama model: {model_name} @ {base_url}")
+    return ChatOpenAI(
+        model=model_name,
+        temperature=0.1,
+        api_key=os.getenv("OLLAMA_API_KEY", "ollama"),
+        base_url=base_url,
+    )
 
 
 class HuggingFaceChatLLM:

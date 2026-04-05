@@ -1,10 +1,13 @@
 """Database operations for scan persistence and history queries."""
 
-from sqlalchemy.orm import Session
-from sqlalchemy import desc
-from database.models import Repository, Scan, DebtItem
 from datetime import datetime
 import logging
+from typing import Any
+
+from sqlalchemy import desc
+from sqlalchemy.orm import Session
+
+from database.models import Repository, Scan, DebtItem
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +137,119 @@ def save_scan(
         f"${analysis.get('total_cost_usd', 0):,.0f}"
     )
     return scan
+
+
+def _get_scan_analysis(scan: Scan) -> dict[str, Any]:
+    """Extract normalized analysis payload from a persisted scan."""
+    raw = scan.raw_result or {}
+    if not isinstance(raw, dict):
+        return {}
+    raw_analysis = raw.get("raw_analysis")
+    if isinstance(raw_analysis, dict):
+        return raw_analysis
+    return raw
+
+
+def get_scan_by_id(
+    db: Session, scan_id: str, user_id: int | None = None
+) -> Scan | None:
+    """Load a scan by ID with optional user scoping."""
+    query = db.query(Scan).filter(Scan.id == scan_id)
+    if user_id is not None:
+        query = query.filter(Scan.user_id == user_id)
+    return query.first()
+
+
+def get_scan_summary_data(
+    db: Session, scan_id: str, user_id: int | None = None
+) -> dict[str, Any] | None:
+    """Return normalized summary data for a scan."""
+    scan = get_scan_by_id(db, scan_id, user_id=user_id)
+    if not scan:
+        return None
+
+    analysis = _get_scan_analysis(scan)
+    return {
+        "scan_id": scan.id,
+        "repository_id": scan.repository_id,
+        "job_id": scan.job_id,
+        "created_at": scan.created_at.isoformat() if scan.created_at else None,
+        "total_cost_usd": scan.total_cost_usd,
+        "debt_score": scan.debt_score,
+        "total_hours": scan.total_hours,
+        "total_sprints": scan.total_sprints,
+        "cost_by_category": scan.cost_by_category or {},
+        "summary": analysis.get("summary", {}),
+    }
+
+
+def get_scan_findings(
+    db: Session, scan_id: str, user_id: int | None = None
+) -> list[dict[str, Any]] | None:
+    """Return structured findings persisted within the scan payload."""
+    scan = get_scan_by_id(db, scan_id, user_id=user_id)
+    if not scan:
+        return None
+    analysis = _get_scan_analysis(scan)
+    findings = analysis.get("findings")
+    return findings if isinstance(findings, list) else []
+
+
+def get_scan_modules(
+    db: Session, scan_id: str, user_id: int | None = None
+) -> list[dict[str, Any]] | None:
+    """Return module summaries for a persisted scan."""
+    scan = get_scan_by_id(db, scan_id, user_id=user_id)
+    if not scan:
+        return None
+    analysis = _get_scan_analysis(scan)
+    modules = analysis.get("module_summaries")
+    return modules if isinstance(modules, list) else []
+
+
+def get_scan_roadmap(
+    db: Session, scan_id: str, user_id: int | None = None
+) -> dict[str, list[dict[str, Any]]] | None:
+    """Return roadmap buckets for a persisted scan."""
+    scan = get_scan_by_id(db, scan_id, user_id=user_id)
+    if not scan:
+        return None
+    analysis = _get_scan_analysis(scan)
+    roadmap = analysis.get("roadmap")
+    return roadmap if isinstance(roadmap, dict) else {}
+
+
+def get_rich_repo_trend(
+    db: Session, github_url: str, user_id: int | None = None
+) -> dict[str, Any]:
+    """Return historical trend data with richer product fields."""
+    scans = get_scan_history(db, github_url, limit=20, user_id=user_id)
+    if not scans:
+        return {"trend": [], "total_scans": 0}
+
+    trend = []
+    for scan in reversed(scans):
+        analysis = _get_scan_analysis(scan)
+        roadmap = analysis.get("roadmap", {})
+        trend.append(
+            {
+                "scan_id": scan.id,
+                "date": scan.created_at.isoformat() if scan.created_at else None,
+                "date_display": scan.created_at.strftime("%b %d") if scan.created_at else None,
+                "total_cost_usd": scan.total_cost_usd,
+                "debt_score": scan.debt_score,
+                "finding_count": len(analysis.get("findings", [])),
+                "module_count": len(analysis.get("module_summaries", [])),
+                "quick_wins": len(roadmap.get("quick_wins", [])),
+                "strategic_items": len(roadmap.get("strategic", [])),
+            }
+        )
+
+    return {
+        "trend": trend,
+        "total_scans": len(trend),
+        "latest": trend[-1] if trend else None,
+    }
 
 
 # ─── History Queries ─────────────────────────────────────────

@@ -8,6 +8,7 @@ import logging
 import traceback
 from datetime import datetime
 from typing import Dict, Any
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,6 +35,11 @@ from database.crud import (
     get_scan_history,
     get_debt_trend,
     get_all_repositories,
+    get_scan_summary_data,
+    get_scan_findings,
+    get_scan_modules,
+    get_scan_roadmap,
+    get_rich_repo_trend,
 )
 
 try:
@@ -57,6 +63,44 @@ FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:3000")
 GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
 GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
 GITHUB_API_USER_URL = "https://api.github.com/user"
+
+
+def _get_ollama_health() -> dict:
+    """Return Ollama configuration and reachability information."""
+    provider = os.getenv("LLM_PROVIDER", "not set")
+    if provider != "ollama":
+        return {
+            "configured": False,
+            "reachable": False,
+            "model": None,
+            "base_url": None,
+            "status": "inactive",
+        }
+
+    base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+    parsed = urlparse(base_url)
+    host = parsed.netloc or parsed.path
+    health_url = f"{parsed.scheme or 'http'}://{host}/api/tags"
+
+    model = os.getenv("OLLAMA_MODEL", "qwen3.5:latest")
+    reachable = False
+    status = "unreachable"
+
+    try:
+        response = httpx.get(health_url, timeout=3)
+        reachable = response.status_code == 200
+        status = "ok" if reachable else f"http_{response.status_code}"
+    except Exception:
+        reachable = False
+        status = "unreachable"
+
+    return {
+        "configured": True,
+        "reachable": reachable,
+        "model": model,
+        "base_url": base_url,
+        "status": status,
+    }
 
 
 def normalize_repo_id(github_url: str) -> str:
@@ -240,6 +284,7 @@ async def health() -> dict:
 
 @app.get("/health")
 async def detailed_health() -> dict:
+    ollama_health = _get_ollama_health()
     return {
         "api": "ok",
         "orchestrator": "ok" if ORCHESTRATOR_AVAILABLE else "error",
@@ -251,6 +296,7 @@ async def detailed_health() -> dict:
             "LLM_PROVIDER": os.getenv("LLM_PROVIDER", "not set"),
             "DATABASE_URL": "set" if os.getenv("DATABASE_URL") else "missing",
         },
+        "ollama": ollama_health,
     }
 
 
@@ -536,6 +582,23 @@ async def get_repo_history(repo_url: str, user: User = Depends(get_current_user)
         db.close()
 
 
+@app.get("/history/{repo_url:path}/rich")
+async def get_repo_history_rich(repo_url: str, user: User = Depends(get_current_user)):
+    """Get richer trend data for a repository, including findings and roadmap counts."""
+    if not repo_url.startswith("http"):
+        repo_url = f"https://{repo_url}"
+
+    if not DB_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available.")
+
+    db = SessionLocal()
+    try:
+        trend = get_rich_repo_trend(db, repo_url, user_id=user.id)
+        return {"github_url": repo_url, **trend}
+    finally:
+        db.close()
+
+
 @app.get("/repositories")
 async def list_repositories(user: User = Depends(get_current_user)):
     """List all tracked repositories with latest metrics."""
@@ -573,6 +636,76 @@ async def get_scan(scan_id: str, user: User = Depends(get_current_user)):
             "raw_result": scan.raw_result,
             "created_at": scan.created_at.isoformat(),
         }
+    finally:
+        db.close()
+
+
+@app.get("/scan/{scan_id}/summary")
+async def get_scan_summary(scan_id: str, user: User = Depends(get_current_user)):
+    """Get normalized summary data for a specific scan."""
+    if not DB_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available.")
+
+    db = SessionLocal()
+    try:
+        summary = get_scan_summary_data(db, scan_id, user_id=user.id)
+        if summary is None:
+            raise HTTPException(404, "Scan not found")
+        return summary
+    finally:
+        db.close()
+
+
+@app.get("/scan/{scan_id}/findings")
+async def get_scan_findings_endpoint(
+    scan_id: str, user: User = Depends(get_current_user)
+):
+    """Get structured findings for a specific scan."""
+    if not DB_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available.")
+
+    db = SessionLocal()
+    try:
+        findings = get_scan_findings(db, scan_id, user_id=user.id)
+        if findings is None:
+            raise HTTPException(404, "Scan not found")
+        return {"scan_id": scan_id, "findings": findings, "total": len(findings)}
+    finally:
+        db.close()
+
+
+@app.get("/scan/{scan_id}/modules")
+async def get_scan_modules_endpoint(
+    scan_id: str, user: User = Depends(get_current_user)
+):
+    """Get module summaries for a specific scan."""
+    if not DB_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available.")
+
+    db = SessionLocal()
+    try:
+        modules = get_scan_modules(db, scan_id, user_id=user.id)
+        if modules is None:
+            raise HTTPException(404, "Scan not found")
+        return {"scan_id": scan_id, "modules": modules, "total": len(modules)}
+    finally:
+        db.close()
+
+
+@app.get("/scan/{scan_id}/roadmap")
+async def get_scan_roadmap_endpoint(
+    scan_id: str, user: User = Depends(get_current_user)
+):
+    """Get remediation roadmap buckets for a specific scan."""
+    if not DB_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available.")
+
+    db = SessionLocal()
+    try:
+        roadmap = get_scan_roadmap(db, scan_id, user_id=user.id)
+        if roadmap is None:
+            raise HTTPException(404, "Scan not found")
+        return {"scan_id": scan_id, "roadmap": roadmap}
     finally:
         db.close()
 
