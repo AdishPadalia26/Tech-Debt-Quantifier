@@ -24,9 +24,42 @@ class DebtItem(BaseModel):
     file: str = Field(..., description="File path where debt was found")
     category: str = Field(..., description="Category of technical debt")
     severity: str = Field(..., description="Severity level: low, medium, high, critical")
-    complexity: int = Field(..., ge=0, description="Cyclomatic complexity score")
+    complexity: int | None = Field(
+        default=None, ge=0, description="Cyclomatic complexity score"
+    )
     remediation_hours: float = Field(..., ge=0, description="Estimated hours to fix")
     cost_usd: float = Field(..., ge=0, description="Estimated cost in USD")
+    confidence: float | None = Field(
+        default=None, ge=0, le=1, description="Confidence in the finding"
+    )
+    business_impact: str | None = Field(
+        default=None, description="Likely business impact classification"
+    )
+    type: str | None = Field(default=None, description="Specific debt item type")
+
+
+class FindingEvidence(BaseModel):
+    """Evidence supporting a debt finding."""
+
+    source: str = Field(..., description="Tool or stage that produced the evidence")
+    summary: str = Field(..., description="Human-readable evidence summary")
+
+
+class DebtFinding(BaseModel):
+    """Extended finding model for structured product output."""
+
+    id: str | None = Field(default=None, description="Optional finding identifier")
+    file_path: str = Field(..., description="File path where debt was found")
+    category: str = Field(..., description="Debt category")
+    subcategory: str | None = Field(default=None, description="Optional debt subtype")
+    severity: str = Field(..., description="Severity level")
+    business_impact: str = Field(..., description="Business impact level")
+    effort_hours: float = Field(..., ge=0, description="Estimated remediation effort")
+    cost_usd: float = Field(..., ge=0, description="Estimated remediation cost")
+    confidence: float = Field(..., ge=0, le=1, description="Finding confidence")
+    evidence: list[FindingEvidence] = Field(
+        default_factory=list, description="Evidence supporting the finding"
+    )
 
 
 class DebtReport(BaseModel):
@@ -36,3 +69,6 @@ class DebtReport(BaseModel):
     total_cost_usd: float = Field(..., ge=0, description="Total estimated cost in USD")
     debt_score: float = Field(..., ge=0, description="Overall debt score (0-100)")
     items: list[DebtItem] = Field(default_factory=list, description="List of debt items found")
+    findings: list[DebtFinding] = Field(
+        default_factory=list, description="Structured findings for richer product flows"
+    )

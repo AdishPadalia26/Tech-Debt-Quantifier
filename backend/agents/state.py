@@ -15,6 +15,9 @@ class AgentState(TypedDict):
 
     raw_analysis: Optional[dict]
     repo_profile: Optional[dict]
+    findings: Optional[list]
+    module_summaries: Optional[list]
+    roadmap: Optional[dict]
 
     executive_summary: Optional[str]
     priority_actions: Optional[list]

@@ -116,7 +116,7 @@ def save_scan(
                 category=item.get("category", ""),
                 severity=item.get("severity", ""),
                 cost_usd=item.get("cost_usd", 0),
-                hours=(item.get("adjusted_minutes", 0) or 0) / 60,
+                hours=item.get("remediation_hours", (item.get("adjusted_minutes", 0) or 0) / 60),
                 complexity=item.get("complexity"),
                 churn_multiplier=item.get("churn_multiplier"),
             )

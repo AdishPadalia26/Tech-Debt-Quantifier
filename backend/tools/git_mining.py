@@ -14,6 +14,12 @@ from typing import Any
 from pydriller import Repository
 
 from constants import CHURN_MULTIPLIERS, DEBT_TYPE_TO_ROLE, SKIP_DIRS
+from tools.scoring import (
+    build_finding_payload,
+    calculate_confidence,
+    classify_business_impact,
+    max_severity,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +39,10 @@ class GitMiner:
         """Check if file should be skipped based on skip dirs."""
         path_parts = Path(file_path).parts
         return any(skip_dir in path_parts for skip_dir in SKIP_DIRS)
+
+    def _normalize_repo_path(self, file_path: str) -> str:
+        """Normalize repository paths for matching across tools."""
+        return str(Path(file_path).as_posix()).lstrip("./")
 
     def get_hotspots(
         self, repo_path: str, max_commits: int = 50
@@ -64,9 +74,10 @@ class GitMiner:
                     break
 
                 for modified_file in commit.modified_files:
-                    file_path = modified_file.filename
+                    file_path = modified_file.new_path or modified_file.old_path or modified_file.filename
                     if not file_path or self._should_skip_file(file_path):
                         continue
+                    file_path = self._normalize_repo_path(file_path)
 
                     file_stats[file_path]["change_count"] += 1
                     file_stats[file_path]["authors"].add(commit.author.email)
@@ -135,7 +146,7 @@ class GitMiner:
         )
         
         for func in all_functions:
-            file_path = func["file"]
+            file_path = self._normalize_repo_path(func["file"])
             complexity = func["complexity"]
             file_complexity[file_path]["total_complexity"] += complexity
             file_complexity[file_path]["function_count"] += 1
@@ -191,36 +202,36 @@ class GitMiner:
         logger.info(f"[CODE QUALITY DEBUG] Files from complexity scan: {len(set(f['file'] for f in all_functions))}")
         logger.info(f"[CODE QUALITY DEBUG] Hotspot files: {len(hotspots)} (fallback={used_fallback})")
 
-        hotspots_by_basename: dict[str, dict[str, Any]] = {}
+        hotspots_by_path: dict[str, dict[str, Any]] = {}
         for h in hotspots:
-            basename = os.path.basename(h["file"])
-            if basename not in hotspots_by_basename or h["change_count"] > hotspots_by_basename[basename]["change_count"]:
-                hotspots_by_basename[basename] = h
-        
-        logger.info(f"[CODE QUALITY DEBUG] Unique basenames in hotspots: {len(hotspots_by_basename)}")
+            normalized_path = self._normalize_repo_path(h["file"])
+            hotspots_by_path[normalized_path] = h
+
+        logger.info(f"[CODE QUALITY DEBUG] Unique paths in hotspots: {len(hotspots_by_path)}")
 
         file_to_functions: dict[str, list[dict]] = defaultdict(list)
         for func in all_functions:
-            file_to_functions[func["file"]].append(func)
+            normalized_path = self._normalize_repo_path(func["file"])
+            file_to_functions[normalized_path].append(func)
 
         risky_files = []
         matched_count = 0
         
         for file_path, functions in file_to_functions.items():
-            basename = os.path.basename(file_path)
-            
-            if basename not in hotspots_by_basename:
+            if file_path not in hotspots_by_path:
                 continue
-            
+
             matched_count += 1
-            hotspot = hotspots_by_basename[basename]
+            hotspot = hotspots_by_path[file_path]
             change_count = hotspot["change_count"]
 
             max_complexity = max(f["complexity"] for f in functions)
-            severity = max(
-                f["severity"]
-                for f in functions
-                if f["severity"] in ("critical", "high", "medium", "low")
+            severity = max_severity(
+                [
+                    f["severity"]
+                    for f in functions
+                    if f["severity"] in ("critical", "high", "medium", "low")
+                ]
             )
 
             churn_multiplier = self.get_churn_multiplier(change_count)
@@ -232,35 +243,45 @@ class GitMiner:
             role = DEBT_TYPE_TO_ROLE["code_quality"]
             rate_fetcher = RateFetcher()
             hourly_rate = rate_fetcher.get_rate(role)
-            cost_usd = (adjusted_minutes / 60) * hourly_rate
+            remediation_hours = adjusted_minutes / 60
+            confidence = calculate_confidence(
+                used_fallback=used_fallback,
+                has_git_history=not used_fallback,
+                category="git_history",
+            )
+            business_impact = classify_business_impact(
+                severity=severity,
+                churn_multiplier=churn_multiplier,
+                change_count=change_count,
+            )
 
-            risk_level = "low"
-            if severity == "critical" or churn_multiplier >= 2.2:
-                risk_level = "critical"
-            elif severity == "high" or churn_multiplier >= 1.7:
-                risk_level = "high"
-            elif severity == "medium" or churn_multiplier >= 1.3:
-                risk_level = "medium"
-
-            risky_files.append({
-                "file": file_path,
-                "basename": basename,
-                "max_complexity": max_complexity,
-                "severity": severity,
-                "change_count": change_count,
-                "churn_multiplier": churn_multiplier,
-                "base_minutes": round(base_minutes, 2),
-                "adjusted_minutes": round(adjusted_minutes, 2),
-                "hourly_rate": hourly_rate,
-                "hourly_rate_source": rate_fetcher.get_all_rates().get("source", "unknown"),
-                "cost_usd": round(cost_usd, 2),
-                "risk_level": risk_level,
-                "used_fallback": used_fallback,
-                "functions": [
-                    {"name": f["function"], "complexity": f["complexity"]}
-                    for f in functions
-                ],
-            })
+            risky_file = build_finding_payload(
+                file_path=file_path,
+                category="code_quality",
+                severity=severity,
+                remediation_hours=remediation_hours,
+                hourly_rate=hourly_rate,
+                confidence=confidence,
+                business_impact=business_impact,
+                extra={
+                    "basename": os.path.basename(file_path),
+                    "max_complexity": max_complexity,
+                    "change_count": change_count,
+                    "churn_multiplier": churn_multiplier,
+                    "base_minutes": round(base_minutes, 2),
+                    "adjusted_minutes": round(adjusted_minutes, 2),
+                    "hourly_rate": hourly_rate,
+                    "hourly_rate_source": rate_fetcher.get_all_rates().get("source", "unknown"),
+                    "risk_level": business_impact,
+                    "used_fallback": used_fallback,
+                    "functions": [
+                        {"name": f["function"], "complexity": f["complexity"]}
+                        for f in functions
+                    ],
+                    "type": "complexity_hotspot",
+                },
+            )
+            risky_files.append(risky_file)
 
         risky_files.sort(key=lambda x: x["cost_usd"], reverse=True)
         logger.info(f"[CODE QUALITY DEBUG] Files matched: {matched_count}")

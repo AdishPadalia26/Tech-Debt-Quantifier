@@ -15,11 +15,17 @@ from datetime import datetime
 from typing import Any
 
 from constants import (
-    DEBT_SCORE_MAX,
     FUNCTION_BASELINE_MINUTES,
     HOURS_PER_SPRINT,
     MAINTENANCE_OVERHEAD_MULTIPLIER,
     SANITY_CHECK_VARIANCE_THRESHOLD,
+)
+from tools.scoring import (
+    aggregate_repo_score,
+    build_finding_payload,
+    calculate_confidence,
+    calculate_cost,
+    classify_business_impact,
 )
 
 logger = logging.getLogger(__name__)
@@ -66,12 +72,17 @@ class CostEstimator:
             return 0.0
 
         cost_per_function = total_cost / function_count
-        raw_score = (cost_per_function / cisq_per_function) * 10
-        debt_score = min(DEBT_SCORE_MAX, raw_score)
-        
-        logger.info(f"[DEBT SCORE] cost_per_function=${cost_per_function:.2f}, raw_score={raw_score:.2f}, final={round(debt_score, 2)}")
+        debt_score = aggregate_repo_score(
+            total_cost=total_cost,
+            function_count=function_count,
+            cisq_per_function=cisq_per_function,
+        )
 
-        return round(debt_score, 2)
+        logger.info(
+            f"[DEBT SCORE] cost_per_function=${cost_per_function:.2f}, final={debt_score}"
+        )
+
+        return debt_score
 
     def sanity_check(
         self, total_cost: float, function_count: int, cisq_per_function: float
@@ -118,9 +129,11 @@ class CostEstimator:
         """Categorize costs by debt type."""
         categories = {
             "code_quality": {"cost_usd": 0.0, "hours": 0.0, "item_count": 0},
+            "architecture": {"cost_usd": 0.0, "hours": 0.0, "item_count": 0},
             "security": {"cost_usd": 0.0, "hours": 0.0, "item_count": 0},
             "documentation": {"cost_usd": 0.0, "hours": 0.0, "item_count": 0},
             "dependency": {"cost_usd": 0.0, "hours": 0.0, "item_count": 0},
+            "test_debt": {"cost_usd": 0.0, "hours": 0.0, "item_count": 0},
         }
 
         for item in debt_items:
@@ -154,14 +167,15 @@ class CostEstimator:
         Returns:
             Complete cost estimate with breakdown and audit trail
         """
-        from data.sonarqube_rules import SonarQubeRules
         from data.vulnerability_fetcher import VulnerabilityFetcher
         from intelligence.benchmark_agent import BenchmarkAgent
         from intelligence.repo_profiler import RepoProfiler
-        from intelligence.rate_agent import RateIntelligenceAgent
         from intelligence.security_cost_agent import SecurityCostAgent
+        from services.finding_aggregator import FindingAggregator
+        from tools.architecture_analysis import ArchitectureAnalyzer
         from tools.git_mining import GitMiner
         from tools.static_analysis import StaticAnalyzer
+        from tools.test_debt_analysis import TestDebtAnalyzer
 
         self._data_sources = []
         debt_items = []
@@ -173,8 +187,6 @@ class CostEstimator:
         multipliers = profile["multipliers"]
         ai_files = profile["ai_detection"]["suspected_files"]
         ai_file_paths = {f["file"] for f in ai_files}
-        tech_stack = profile["tech_stack"]
-
         logger.info(f"[COST EST] Profile complete - uses_ai: {profile['rates']['uses_ai']}")
 
         logger.info("[COST EST] Step 0b: Fetching dynamic benchmarks...")
@@ -205,21 +217,27 @@ class CostEstimator:
             adjusted_cost = rf["cost_usd"] * ai_premium
 
             debt_items.append({
-                "file": rf["file"],
-                "category": "code_quality",
-                "severity": rf["severity"],
+                **rf,
                 "complexity": rf["max_complexity"],
-                "remediation_hours": rf["adjusted_minutes"] / 60,
                 "cost_usd": round(adjusted_cost, 2),
-                "change_count": rf["change_count"],
-                "churn_multiplier": rf["churn_multiplier"],
                 "ai_premium": ai_premium,
                 "rate": base_rate,
                 "rate_source": "Dynamic blend",
-                "type": "complexity_hotspot",
             })
             code_quality_cost += adjusted_cost
         logger.info(f"[COST EST] Code quality: {len(risky_files)} files, ${code_quality_cost:.2f}")
+
+        logger.info("[COST EST] Step 2b: Running architecture analysis...")
+        architecture_items = ArchitectureAnalyzer().analyze(repo_path, base_rate * 1.2)
+        architecture_cost = 0.0
+        for arch_item in architecture_items:
+            arch_item["rate"] = round(base_rate * 1.2, 2)
+            arch_item["rate_source"] = "Dynamic blend"
+            debt_items.append(arch_item)
+            architecture_cost += arch_item["cost_usd"]
+        logger.info(
+            f"[COST EST] Architecture: {len(architecture_items)} issues, ${architecture_cost:.2f}"
+        )
 
         logger.info("[COST EST] Step 3: Running security scan with risk weighting...")
         security_issues = static_analyzer.run_security_scan(repo_path)
@@ -238,36 +256,35 @@ class CostEstimator:
                 cwe_id, cvss_score, fix_hours, security_rate
             )
 
-            debt_items.append({
-                "file": issue["file"],
-                "category": "security",
-                "severity": severity,
-                "line": issue.get("line", 0),
-                "issue_text": issue.get("issue_text", ""),
-                "bandit_test_id": issue.get("bandit_test_id", ""),
-                "remediation_hours": fix_hours,
-                "cost_usd": round(cost_detail["total_security_cost"], 2),
-                "cost_detail": cost_detail,
-                "rate": security_rate,
-                "rate_source": "Dynamic blend",
-                "type": "security_hotspot",
-            })
+            confidence = calculate_confidence(category="security_scan")
+            business_impact = classify_business_impact(
+                severity=severity.lower(),
+                churn_multiplier=1.0,
+                change_count=0,
+            )
+            finding = build_finding_payload(
+                file_path=issue["file"],
+                category="security",
+                severity=severity.lower(),
+                remediation_hours=fix_hours,
+                hourly_rate=security_rate,
+                confidence=confidence,
+                business_impact=business_impact,
+                extra={
+                    "line": issue.get("line", 0),
+                    "issue_text": issue.get("issue_text", ""),
+                    "bandit_test_id": issue.get("bandit_test_id", ""),
+                    "cost_detail": cost_detail,
+                    "rate": security_rate,
+                    "rate_source": "Dynamic blend",
+                    "type": "security_hotspot",
+                },
+            )
+            finding["cost_usd"] = round(cost_detail["total_security_cost"], 2)
+            debt_items.append(finding)
             security_cost += cost_detail["total_security_cost"]
-        
-        func_count_for_security = complexity_results.get("total_functions", 0)
-        base_security_cost = func_count_for_security * 28.0
-        security_cost += base_security_cost
-        
-        debt_items.append({
-            "file": "base_security",
-            "category": "security",
-            "severity": "low",
-            "cost_usd": round(base_security_cost, 2),
-            "remediation_hours": base_security_cost / security_rate,
-            "type": "security_baseline",
-        })
-        
-        logger.info(f"[COST EST] Security: {len(security_issues)} issues + base ${base_security_cost:.2f}, total ${security_cost:.2f}")
+
+        logger.info(f"[COST EST] Security: {len(security_issues)} issues, total ${security_cost:.2f}")
 
         logger.info("[COST EST] Step 4: Finding missing docstrings...")
         doc_issues = static_analyzer.find_missing_docstrings(repo_path)
@@ -278,22 +295,46 @@ class CostEstimator:
             remediation_minutes = doc.get("remediation_minutes", 10)
             cost_usd = (remediation_minutes / 60) * doc_rate
 
-            debt_items.append({
-                "file": doc["file"],
-                "category": "documentation",
-                "severity": doc.get("severity", "low"),
-                "function": doc.get("function", ""),
-                "line": doc.get("line", 0),
-                "remediation_minutes": remediation_minutes,
-                "remediation_hours": remediation_minutes / 60,
-                "cost_usd": round(cost_usd, 2),
-                "doc_type": doc.get("type", "missing_docstring"),
-                "rate": doc_rate,
-                "rate_source": "Dynamic blend",
-                "type": "missing_docstring",
-            })
+            confidence = calculate_confidence(category="documentation")
+            severity = doc.get("severity", "low")
+            business_impact = classify_business_impact(severity=severity)
+            debt_items.append(
+                build_finding_payload(
+                    file_path=doc["file"],
+                    category="documentation",
+                    severity=severity,
+                    remediation_hours=remediation_minutes / 60,
+                    hourly_rate=doc_rate,
+                    confidence=confidence,
+                    business_impact=business_impact,
+                    extra={
+                        "function": doc.get("function", ""),
+                        "line": doc.get("line", 0),
+                        "remediation_minutes": remediation_minutes,
+                        "doc_type": doc.get("type", "missing_docstring"),
+                        "rate": doc_rate,
+                        "rate_source": "Dynamic blend",
+                        "type": "missing_docstring",
+                    },
+                )
+            )
             doc_cost += cost_usd
         logger.info(f"[COST EST] Documentation: {len(doc_issues)} issues, ${doc_cost:.2f}")
+
+        logger.info("[COST EST] Step 4b: Checking test debt...")
+        hotspot_files = [item["file"] for item in risky_files]
+        test_debt_items = TestDebtAnalyzer().find_test_gaps(repo_path, hotspot_files)
+        test_debt_cost = 0.0
+
+        for test_item in test_debt_items:
+            test_item["rate"] = base_rate
+            test_item["rate_source"] = "Dynamic blend"
+            debt_items.append(test_item)
+            test_debt_cost += test_item["cost_usd"]
+
+        logger.info(
+            f"[COST EST] Test debt: {len(test_debt_items)} issues, ${test_debt_cost:.2f}"
+        )
 
         logger.info("[COST EST] Step 5: Checking dependencies for vulnerabilities...")
         vuln_fetcher = VulnerabilityFetcher()
@@ -301,25 +342,40 @@ class CostEstimator:
         dep_cost = 0.0
 
         for vuln in dep_vulns:
-            debt_items.append({
-                "file": "requirements.txt",
-                "category": "dependency",
-                "severity": vuln.get("severity", "UNKNOWN"),
-                "package": vuln.get("package", ""),
-                "installed_version": vuln.get("installed_version", ""),
-                "cve_id": vuln.get("cve_id", ""),
-                "cvss_score": vuln.get("cvss_score"),
-                "remediation_hours": vuln.get("remediation_hours", 0),
-                "cost_usd": vuln.get("cost_usd", 0),
-                "fixed_version": vuln.get("fixed_version"),
-                "type": "vulnerability",
-            })
+            severity = str(vuln.get("severity", "UNKNOWN")).lower()
+            confidence = calculate_confidence(category="dependency")
+            business_impact = classify_business_impact(severity=severity)
+            finding = build_finding_payload(
+                file_path="requirements.txt",
+                category="dependency",
+                severity=severity,
+                remediation_hours=vuln.get("remediation_hours", 0),
+                hourly_rate=base_rate,
+                confidence=confidence,
+                business_impact=business_impact,
+                extra={
+                    "package": vuln.get("package", ""),
+                    "installed_version": vuln.get("installed_version", ""),
+                    "cve_id": vuln.get("cve_id", ""),
+                    "cvss_score": vuln.get("cvss_score"),
+                    "fixed_version": vuln.get("fixed_version"),
+                    "type": "vulnerability",
+                },
+            )
+            finding["cost_usd"] = vuln.get("cost_usd", 0)
+            debt_items.append(finding)
             dep_cost += vuln.get("cost_usd", 0)
         logger.info(f"[COST EST] Dependencies: {len(dep_vulns)} vulnerabilities, ${dep_cost:.2f}")
 
         function_count = complexity_results.get("total_functions", 0)
 
-        baseline_cost = (FUNCTION_BASELINE_MINUTES / 60) * base_rate * function_count
+        baseline_hours = (FUNCTION_BASELINE_MINUTES / 60) * function_count
+        baseline_cost = calculate_cost(
+            effort_hours=baseline_hours,
+            hourly_rate=base_rate,
+            business_impact="low",
+            confidence=0.35,
+        )
         logger.info(f"[COST EST] Baseline cost ({function_count} functions): ${baseline_cost:.2f}")
 
         total_cost = sum(item.get("cost_usd", 0) for item in debt_items)
@@ -331,8 +387,8 @@ class CostEstimator:
         debt_score = self.calculate_debt_score(total_cost, function_count, cisq_per_function)
         sanity = self.sanity_check(total_cost, function_count, cisq_per_function)
         cost_by_category = self._categorize_costs(debt_items)
+        aggregated = FindingAggregator().aggregate(debt_items)
 
-        baseline_hours = baseline_cost / base_rate
         cost_by_category["code_quality"]["cost_usd"] += baseline_cost * combined_multiplier
         cost_by_category["code_quality"]["hours"] += baseline_hours * combined_multiplier
 
@@ -358,6 +414,9 @@ class CostEstimator:
             "debt_score": debt_score,
             "sanity_check": sanity,
             "debt_items": debt_items,
+            "findings": aggregated["findings"],
+            "module_summaries": aggregated["module_summaries"],
+            "roadmap": aggregated["roadmap"],
             "summary": {
                 "files_scanned": complexity_results.get("total_files_scanned", 0),
                 "functions_analyzed": function_count,

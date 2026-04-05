@@ -111,6 +111,30 @@ DEBT_SCORE_MAX: Final[float] = 10.0
 
 SANITY_CHECK_VARIANCE_THRESHOLD: Final[float] = 150.0
 
+SEVERITY_RANK: Final[dict[str, int]] = {
+    "low": 1,
+    "medium": 2,
+    "high": 3,
+    "critical": 4,
+}
+
+BUSINESS_IMPACT_WEIGHTS: Final[dict[str, float]] = {
+    "low": 0.9,
+    "medium": 1.0,
+    "high": 1.2,
+    "critical": 1.5,
+}
+
+CONFIDENCE_DEFAULTS: Final[dict[str, float]] = {
+    "static_analysis": 0.7,
+    "git_history": 0.8,
+    "fallback": 0.45,
+    "security_scan": 0.8,
+    "documentation": 0.65,
+    "dependency": 0.85,
+    "test_debt": 0.7,
+}
+
 COMPLEXITY_REMEDIATION_MINUTES: Final[dict[str, float]] = {
     "low": 15.0,
     "medium": 45.0,
@@ -121,3 +145,20 @@ COMPLEXITY_REMEDIATION_MINUTES: Final[dict[str, float]] = {
 FUNCTION_BASELINE_MINUTES: Final[float] = 12.0
 
 MAINTENANCE_OVERHEAD_MULTIPLIER: Final[float] = 6.0
+
+TEST_FILE_PATTERNS: Final[list[str]] = [
+    "test_",
+    "_test.",
+    ".test.",
+    ".spec.",
+]
+
+TEST_DIR_NAMES: Final[set[str]] = {
+    "tests",
+    "test",
+    "__tests__",
+    "spec",
+}
+
+ARCHITECTURE_LOC_THRESHOLD: Final[int] = 400
+ARCHITECTURE_IMPORT_FANOUT_THRESHOLD: Final[int] = 10
