@@ -2,6 +2,19 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import ActiveDebtChart from '@/components/ActiveDebtChart';
+import RepositoryInsightsPanel from '@/components/RepositoryInsightsPanel';
+import UnresolvedFindingsList from '@/components/UnresolvedFindingsList';
+import {
+  getRepoHistoryRich,
+  getRepositorySummary,
+  getRepositoryUnresolved,
+} from '@/lib/api';
+import {
+  RepoSummaryRollup,
+  RichRepoTrend,
+  UnresolvedFindingsResponse,
+} from '@/types';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -71,6 +84,12 @@ export default function PortfolioPage() {
   const [scanning, setScanning]   = useState<string | null>(null);
   const [newRepo, setNewRepo]     = useState('');
   const [adding, setAdding]       = useState(false);
+  const [selectedRepoUrl, setSelectedRepoUrl] = useState<string | null>(null);
+  const [selectedSummary, setSelectedSummary] = useState<RepoSummaryRollup | null>(null);
+  const [selectedTrend, setSelectedTrend] = useState<RichRepoTrend | null>(null);
+  const [selectedUnresolved, setSelectedUnresolved] =
+    useState<UnresolvedFindingsResponse | null>(null);
+  const [insightLoading, setInsightLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -88,6 +107,49 @@ export default function PortfolioPage() {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const loadRepoInsights = useCallback(async (repoUrl: string) => {
+    setInsightLoading(true);
+    setSelectedRepoUrl(repoUrl);
+    try {
+      const [summaryData, trendData, unresolvedData] = await Promise.all([
+        getRepositorySummary(repoUrl),
+        getRepoHistoryRich(repoUrl),
+        getRepositoryUnresolved(repoUrl, 6),
+      ]);
+      setSelectedSummary(summaryData);
+      setSelectedTrend(trendData);
+      setSelectedUnresolved(unresolvedData);
+    } catch (e) {
+      console.error(e);
+      setSelectedSummary(null);
+      setSelectedTrend(null);
+      setSelectedUnresolved(null);
+    } finally {
+      setInsightLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!repos.length) {
+      setSelectedRepoUrl(null);
+      setSelectedSummary(null);
+      setSelectedTrend(null);
+      setSelectedUnresolved(null);
+      return;
+    }
+
+    const currentStillExists = selectedRepoUrl
+      ? repos.some((repo) => repo.github_url === selectedRepoUrl)
+      : false;
+    const nextRepo = currentStillExists ? selectedRepoUrl : repos[0].github_url;
+
+    if (nextRepo && nextRepo !== selectedRepoUrl) {
+      void loadRepoInsights(nextRepo);
+    } else if (nextRepo && !selectedSummary && !insightLoading) {
+      void loadRepoInsights(nextRepo);
+    }
+  }, [repos, selectedRepoUrl, selectedSummary, insightLoading, loadRepoInsights]);
 
   const sorted = [...repos].sort((a, b) => {
     const av = a[sortBy] as number | string;
@@ -237,6 +299,49 @@ export default function PortfolioPage() {
         </button>
       </form>
 
+      {(selectedSummary || insightLoading) && (
+        <div className="space-y-6 mb-8">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-white">
+                Selected Repository Insights
+              </h2>
+              <p className="text-gray-400 text-sm">
+                Deep view powered by the new structured backend rollups
+              </p>
+            </div>
+            {selectedRepoUrl && (
+              <p className="text-sm text-purple-400">
+                {selectedRepoUrl.split('/').slice(-2).join('/')}
+              </p>
+            )}
+          </div>
+
+          {insightLoading ? (
+            <div className="bg-gray-900 rounded-xl p-8 border border-gray-800 text-gray-400">
+              Loading repository insights...
+            </div>
+          ) : (
+            <>
+              {selectedSummary && (
+                <RepositoryInsightsPanel summary={selectedSummary} />
+              )}
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                {selectedTrend && (
+                  <ActiveDebtChart points={selectedTrend.active_trend} />
+                )}
+                {selectedUnresolved && (
+                  <UnresolvedFindingsList
+                    findings={selectedUnresolved.items}
+                    title="Selected Repo Unresolved Findings"
+                  />
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Repo Table */}
       {repos.length === 0 ? (
         <div className="bg-gray-900 rounded-xl p-12 text-center
@@ -368,6 +473,16 @@ export default function PortfolioPage() {
                     {/* Actions */}
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
+                        <button
+                          onClick={() => void loadRepoInsights(repo.github_url)}
+                          className={`text-xs px-2.5 py-1 rounded transition-colors ${
+                            selectedRepoUrl === repo.github_url
+                              ? 'bg-cyan-900/40 text-cyan-300'
+                              : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                          }`}
+                        >
+                          Inspect
+                        </button>
                         <button
                           onClick={() => handleRescan(repo.github_url)}
                           disabled={scanning === repo.github_url}

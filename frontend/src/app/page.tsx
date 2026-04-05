@@ -8,8 +8,23 @@ import CostBreakdownChart from '@/components/CostBreakdownChart';
 import PriorityActions from '@/components/PriorityActions';
 import RepoProfile from '@/components/RepoProfile';
 import DebtTrendChart from '@/components/DebtTrendChart';
-import { JobResult, DebtReport, RepoHistory } from '@/types';
-import { getRepoHistory } from '@/lib/api';
+import ActiveDebtChart from '@/components/ActiveDebtChart';
+import RepositoryInsightsPanel from '@/components/RepositoryInsightsPanel';
+import UnresolvedFindingsList from '@/components/UnresolvedFindingsList';
+import {
+  JobResult,
+  DebtReport,
+  RepoHistory,
+  RepoSummaryRollup,
+  RichRepoTrend,
+  UnresolvedFindingsResponse,
+} from '@/types';
+import {
+  getRepoHistory,
+  getRepoHistoryRich,
+  getRepositorySummary,
+  getRepositoryUnresolved,
+} from '@/lib/api';
 
 type AppState = 'idle' | 'analyzing' | 'complete' | 'error';
 
@@ -19,6 +34,10 @@ export default function Home() {
   const [result, setResult] = useState<DebtReport | null>(null);
   const [error, setError] = useState('');
   const [repoHistory, setRepoHistory] = useState<RepoHistory | null>(null);
+  const [repoSummary, setRepoSummary] = useState<RepoSummaryRollup | null>(null);
+  const [richRepoHistory, setRichRepoHistory] = useState<RichRepoTrend | null>(null);
+  const [unresolvedFindings, setUnresolvedFindings] =
+    useState<UnresolvedFindingsResponse | null>(null);
   const [currentGithubUrl, setCurrentGithubUrl] = useState('');
   const [downloading, setDownloading] = useState(false);
   const [slackSending, setSlackSending] = useState(false);
@@ -39,6 +58,9 @@ export default function Home() {
     setResult(null);
     setError('');
     setRepoHistory(null);
+    setRepoSummary(null);
+    setRichRepoHistory(null);
+    setUnresolvedFindings(null);
     if (githubUrl) setCurrentGithubUrl(githubUrl);
   };
 
@@ -53,8 +75,16 @@ export default function Home() {
 
     // Fetch scan history for trend chart
     try {
-      const history = await getRepoHistory(currentGithubUrl);
+      const [history, summary, richHistory, unresolved] = await Promise.all([
+        getRepoHistory(currentGithubUrl),
+        getRepositorySummary(currentGithubUrl),
+        getRepoHistoryRich(currentGithubUrl),
+        getRepositoryUnresolved(currentGithubUrl, 6),
+      ]);
       setRepoHistory(history);
+      setRepoSummary(summary);
+      setRichRepoHistory(richHistory);
+      setUnresolvedFindings(unresolved);
     } catch (e) {
       console.log('History not available yet:', e);
     }
@@ -90,6 +120,10 @@ export default function Home() {
     setJobId('');
     setResult(null);
     setError('');
+    setRepoHistory(null);
+    setRepoSummary(null);
+    setRichRepoHistory(null);
+    setUnresolvedFindings(null);
   };
 
   useEffect(() => {
@@ -361,6 +395,14 @@ export default function Home() {
               />
             )}
 
+            {repoSummary && (
+              <RepositoryInsightsPanel summary={repoSummary} />
+            )}
+
+            {richRepoHistory && (
+              <ActiveDebtChart points={richRepoHistory.active_trend} />
+            )}
+
             {/* Charts + Profile */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <CostBreakdownChart 
@@ -369,6 +411,10 @@ export default function Home() {
                 <RepoProfile profile={result.repo_profile} />
               )}
             </div>
+
+            {unresolvedFindings && (
+              <UnresolvedFindingsList findings={unresolvedFindings.items} />
+            )}
 
             {/* Priority Actions */}
             {result.priority_actions && (
