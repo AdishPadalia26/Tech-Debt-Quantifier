@@ -13,11 +13,10 @@ from urllib.parse import urlparse
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, RedirectResponse
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from dotenv import load_dotenv
 from urllib.parse import urlencode
 import httpx
-from jose import jwt, JWTError
+from jose import jwt
 
 load_dotenv()
 
@@ -30,29 +29,15 @@ logger = logging.getLogger(__name__)
 from models.schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
-    FindingSuppressionRequest,
-    FindingFeedbackRequest,
 )
 from database.connection import DB_AVAILABLE, SessionLocal, engine
 from database.models import Base, User
 from database.crud import (
     save_scan,
-    get_scan_history,
-    get_debt_trend,
-    get_all_repositories,
-    get_scan_summary_data,
-    get_scan_findings,
-    query_scan_findings,
-    get_scan_modules,
-    get_scan_roadmap,
-    get_rich_repo_trend,
-    compare_scans,
-    suppress_finding,
-    add_finding_feedback,
-    get_repo_triage_stats,
-    get_repo_unresolved_findings,
-    get_repo_summary_rollup,
 )
+from api.deps import get_current_user
+from api.routes.repositories import router as repositories_router
+from api.routes.scans import router as scans_router
 
 try:
     from agents.orchestrator import TechDebtOrchestrator
@@ -150,32 +135,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-auth_scheme = HTTPBearer(auto_error=False)
-
-
-def get_current_user(
-    creds: HTTPAuthorizationCredentials = Depends(auth_scheme),
-) -> User:
-    """Get current authenticated user from JWT token."""
-    if not creds:
-        raise HTTPException(401, "Not authenticated")
-
-    token = creds.credentials
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
-        user_id = int(payload.get("sub"))
-    except JWTError:
-        raise HTTPException(401, "Invalid token")
-
-    db = SessionLocal()
-    try:
-        user = db.query(User).get(user_id)
-        if not user:
-            raise HTTPException(401, "User not found")
-        return user
-    finally:
-        db.close()
-
+app.include_router(repositories_router)
+app.include_router(scans_router)
 
 @app.get("/auth/github/login")
 async def github_login():
@@ -554,338 +515,6 @@ async def list_jobs() -> dict:
 # ──────────────────────────────────────────────
 # Database-backed endpoints
 # ──────────────────────────────────────────────
-
-
-@app.get("/history/{repo_url:path}")
-async def get_repo_history(repo_url: str, user: User = Depends(get_current_user)):
-    """Get scan history and trend for a repo."""
-    if not repo_url.startswith("http"):
-        repo_url = f"https://{repo_url}"
-
-    if not DB_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Database not available.")
-
-    db = SessionLocal()
-    try:
-        history = get_scan_history(db, repo_url, user_id=user.id, limit=10)
-        trend = get_debt_trend(db, repo_url, user_id=user.id)
-
-        scans = [
-            {
-                "scan_id": s.id,
-                "date": s.created_at.isoformat(),
-                "date_display": s.created_at.strftime("%b %d, %Y"),
-                "total_cost": s.total_cost_usd,
-                "debt_score": s.debt_score,
-                "total_hours": s.total_hours,
-                "executive_summary": s.executive_summary,
-                "cost_by_category": s.cost_by_category,
-            }
-            for s in history
-        ]
-
-        return {
-            "github_url": repo_url,
-            "scans": scans,
-            "trend": trend,
-            "total_scans": len(scans),
-        }
-    finally:
-        db.close()
-
-
-@app.get("/history/{repo_url:path}/rich")
-async def get_repo_history_rich(repo_url: str, user: User = Depends(get_current_user)):
-    """Get richer trend data for a repository, including findings and roadmap counts."""
-    if not repo_url.startswith("http"):
-        repo_url = f"https://{repo_url}"
-
-    if not DB_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Database not available.")
-
-    db = SessionLocal()
-    try:
-        trend = get_rich_repo_trend(db, repo_url, user_id=user.id)
-        return {"github_url": repo_url, **trend}
-    finally:
-        db.close()
-
-
-@app.get("/repositories")
-async def list_repositories(user: User = Depends(get_current_user)):
-    """List all tracked repositories with latest metrics."""
-    if not DB_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Database not available.")
-
-    db = SessionLocal()
-    try:
-        repos = get_all_repositories(db, user_id=user.id)
-        return {"repositories": repos, "total": len(repos)}
-    finally:
-        db.close()
-
-
-@app.get("/repositories/{repo_url:path}/summary")
-async def get_repository_summary(
-    repo_url: str, user: User = Depends(get_current_user)
-):
-    """Get a high-level rollup for the latest completed repository scan."""
-    if not DB_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Database not available.")
-
-    db = SessionLocal()
-    try:
-        summary = get_repo_summary_rollup(db, repo_url, user_id=user.id)
-        if summary is None:
-            raise HTTPException(404, "No completed scans found for repository")
-        return summary
-    finally:
-        db.close()
-
-
-@app.get("/repositories/{repo_url:path}/triage")
-async def get_repository_triage(
-    repo_url: str, user: User = Depends(get_current_user)
-):
-    """Get triage metrics for the latest completed repository scan."""
-    if not DB_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Database not available.")
-
-    db = SessionLocal()
-    try:
-        triage = get_repo_triage_stats(db, repo_url, user_id=user.id)
-        if triage is None:
-            raise HTTPException(404, "No completed scans found for repository")
-        return triage
-    finally:
-        db.close()
-
-
-@app.get("/repositories/{repo_url:path}/unresolved")
-async def get_repository_unresolved(
-    repo_url: str,
-    limit: int = 20,
-    user: User = Depends(get_current_user),
-):
-    """Get unresolved findings from the latest completed repository scan."""
-    if not DB_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Database not available.")
-
-    db = SessionLocal()
-    try:
-        findings = get_repo_unresolved_findings(
-            db,
-            repo_url,
-            user_id=user.id,
-            limit=limit,
-        )
-        if findings is None:
-            raise HTTPException(404, "No completed scans found for repository")
-        return {
-            "github_url": normalize_repo_id(repo_url),
-            "items": findings,
-            "total": len(findings),
-            "limit": limit,
-        }
-    finally:
-        db.close()
-
-
-@app.get("/scan/{scan_id}")
-async def get_scan(scan_id: str, user: User = Depends(get_current_user)):
-    """Get a specific scan by ID."""
-    if not DB_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Database not available.")
-
-    db = SessionLocal()
-    try:
-        from database.models import Scan
-
-        scan = db.query(Scan).filter(Scan.id == scan_id, Scan.user_id == user.id).first()
-        if not scan:
-            raise HTTPException(404, "Scan not found")
-        return {
-            "scan_id": scan.id,
-            "total_cost": scan.total_cost_usd,
-            "debt_score": scan.debt_score,
-            "executive_summary": scan.executive_summary,
-            "priority_actions": scan.priority_actions,
-            "roi_analysis": scan.roi_analysis,
-            "raw_result": scan.raw_result,
-            "created_at": scan.created_at.isoformat(),
-        }
-    finally:
-        db.close()
-
-
-@app.get("/scan/{scan_id}/summary")
-async def get_scan_summary(scan_id: str, user: User = Depends(get_current_user)):
-    """Get normalized summary data for a specific scan."""
-    if not DB_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Database not available.")
-
-    db = SessionLocal()
-    try:
-        summary = get_scan_summary_data(db, scan_id, user_id=user.id)
-        if summary is None:
-            raise HTTPException(404, "Scan not found")
-        return summary
-    finally:
-        db.close()
-
-
-@app.get("/scan/{scan_id}/findings")
-async def get_scan_findings_endpoint(
-    scan_id: str,
-    category: str | None = None,
-    severity: str | None = None,
-    module: str | None = None,
-    min_confidence: float | None = None,
-    limit: int = 50,
-    offset: int = 0,
-    user: User = Depends(get_current_user),
-):
-    """Get structured findings for a specific scan."""
-    if not DB_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Database not available.")
-
-    db = SessionLocal()
-    try:
-        findings = query_scan_findings(
-            db,
-            scan_id,
-            user_id=user.id,
-            category=category,
-            severity=severity,
-            module=module,
-            min_confidence=min_confidence,
-            limit=limit,
-            offset=offset,
-        )
-        if findings is None:
-            raise HTTPException(404, "Scan not found")
-        return {"scan_id": scan_id, "findings": findings["items"], "total": findings["total"], "limit": findings["limit"], "offset": findings["offset"]}
-    finally:
-        db.close()
-
-
-@app.get("/scan/{scan_id}/modules")
-async def get_scan_modules_endpoint(
-    scan_id: str, user: User = Depends(get_current_user)
-):
-    """Get module summaries for a specific scan."""
-    if not DB_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Database not available.")
-
-    db = SessionLocal()
-    try:
-        modules = get_scan_modules(db, scan_id, user_id=user.id)
-        if modules is None:
-            raise HTTPException(404, "Scan not found")
-        return {"scan_id": scan_id, "modules": modules, "total": len(modules)}
-    finally:
-        db.close()
-
-
-@app.get("/scan/{scan_id}/roadmap")
-async def get_scan_roadmap_endpoint(
-    scan_id: str, user: User = Depends(get_current_user)
-):
-    """Get remediation roadmap buckets for a specific scan."""
-    if not DB_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Database not available.")
-
-    db = SessionLocal()
-    try:
-        roadmap = get_scan_roadmap(db, scan_id, user_id=user.id)
-        if roadmap is None:
-            raise HTTPException(404, "Scan not found")
-        return {"scan_id": scan_id, "roadmap": roadmap}
-    finally:
-        db.close()
-
-
-@app.get("/scan/compare")
-async def compare_scan_endpoint(
-    base_scan_id: str,
-    target_scan_id: str,
-    user: User = Depends(get_current_user),
-):
-    """Compare two scans and return deltas in cost, score, and findings."""
-    if not DB_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Database not available.")
-
-    db = SessionLocal()
-    try:
-        comparison = compare_scans(
-            db,
-            base_scan_id,
-            target_scan_id,
-            user_id=user.id,
-        )
-        if comparison is None:
-            raise HTTPException(404, "One or both scans not found")
-        return comparison
-    finally:
-        db.close()
-
-
-@app.post("/scan/{scan_id}/findings/{finding_id}/suppress")
-async def suppress_finding_endpoint(
-    scan_id: str,
-    finding_id: str,
-    request: FindingSuppressionRequest,
-    user: User = Depends(get_current_user),
-):
-    """Suppress a finding for the given scan."""
-    if not DB_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Database not available.")
-
-    db = SessionLocal()
-    try:
-        suppression = suppress_finding(
-            db,
-            scan_id,
-            finding_id,
-            reason=request.reason,
-            created_by=user.login,
-            user_id=user.id,
-        )
-        if suppression is None:
-            raise HTTPException(404, "Finding not found")
-        return {"scan_id": scan_id, "finding_id": finding_id, "suppression": suppression}
-    finally:
-        db.close()
-
-
-@app.post("/scan/{scan_id}/findings/{finding_id}/feedback")
-async def add_finding_feedback_endpoint(
-    scan_id: str,
-    finding_id: str,
-    request: FindingFeedbackRequest,
-    user: User = Depends(get_current_user),
-):
-    """Attach human feedback to a finding for the given scan."""
-    if not DB_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Database not available.")
-
-    db = SessionLocal()
-    try:
-        feedback = add_finding_feedback(
-            db,
-            scan_id,
-            finding_id,
-            feedback_type=request.feedback_type,
-            severity_override=request.severity_override,
-            notes=request.notes,
-            created_by=user.login,
-            user_id=user.id,
-        )
-        if feedback is None:
-            raise HTTPException(404, "Finding not found")
-        return {"scan_id": scan_id, "finding_id": finding_id, "feedback": feedback}
-    finally:
-        db.close()
 
 
 @app.get("/report/{job_id}/pdf")

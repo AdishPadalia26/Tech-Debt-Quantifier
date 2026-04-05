@@ -428,14 +428,61 @@ def get_rich_repo_trend(
     """Return historical trend data with richer product fields."""
     scans = get_scan_history(db, github_url, limit=20, user_id=user_id)
     if not scans:
-        return {"trend": [], "total_scans": 0}
+        return {
+            "trend": [],
+            "active_trend": [],
+            "category_trends": {},
+            "module_trends": {},
+            "total_scans": 0,
+        }
 
     trend = []
+    active_trend = []
+    category_trends: dict[str, list[dict[str, Any]]] = {}
+    module_trends: dict[str, list[dict[str, Any]]] = {}
     for scan in reversed(scans):
-        analysis = _get_scan_analysis(scan)
         roadmap = get_scan_roadmap(db, scan.id, user_id=user_id) or {}
         findings = get_scan_findings(db, scan.id, user_id=user_id) or []
         modules = get_scan_modules(db, scan.id, user_id=user_id) or []
+        active_findings = [
+            finding
+            for finding in findings
+            if finding.get("status") == "open" and not finding.get("suppressed")
+        ]
+
+        category_rollup: dict[str, dict[str, float | int]] = {}
+        for finding in findings:
+            category = str(finding.get("category", "unknown"))
+            category_rollup.setdefault(category, {"count": 0, "cost_usd": 0.0})
+            category_rollup[category]["count"] += 1
+            category_rollup[category]["cost_usd"] += float(
+                finding.get("cost_usd", 0.0)
+            )
+
+        for category, values in category_rollup.items():
+            category_trends.setdefault(category, []).append(
+                {
+                    "scan_id": scan.id,
+                    "date": scan.created_at.isoformat() if scan.created_at else None,
+                    "count": int(values["count"]),
+                    "cost_usd": round(float(values["cost_usd"]), 2),
+                }
+            )
+
+        for module in modules:
+            module_name = str(module.get("module", "root"))
+            module_trends.setdefault(module_name, []).append(
+                {
+                    "scan_id": scan.id,
+                    "date": scan.created_at.isoformat() if scan.created_at else None,
+                    "finding_count": int(module.get("finding_count", 0)),
+                    "total_cost_usd": round(
+                        float(module.get("total_cost_usd", 0.0)), 2
+                    ),
+                    "max_severity": module.get("max_severity", "low"),
+                }
+            )
+
         trend.append(
             {
                 "scan_id": scan.id,
@@ -449,11 +496,54 @@ def get_rich_repo_trend(
                 "strategic_items": len(roadmap.get("strategic", [])),
             }
         )
+        active_trend.append(
+            {
+                "scan_id": scan.id,
+                "date": scan.created_at.isoformat() if scan.created_at else None,
+                "date_display": scan.created_at.strftime("%b %d")
+                if scan.created_at
+                else None,
+                "active_finding_count": len(active_findings),
+                "active_cost_usd": round(
+                    sum(float(finding.get("cost_usd", 0.0)) for finding in active_findings),
+                    2,
+                ),
+            }
+        )
+
+    category_deltas: dict[str, dict[str, float | int]] = {}
+    for category, points in category_trends.items():
+        first = points[0]
+        last = points[-1]
+        category_deltas[category] = {
+            "count_delta": int(last["count"]) - int(first["count"]),
+            "cost_delta_usd": round(
+                float(last["cost_usd"]) - float(first["cost_usd"]), 2
+            ),
+        }
+
+    module_deltas: dict[str, dict[str, float | int | str]] = {}
+    for module_name, points in module_trends.items():
+        first = points[0]
+        last = points[-1]
+        module_deltas[module_name] = {
+            "finding_count_delta": int(last["finding_count"]) - int(first["finding_count"]),
+            "cost_delta_usd": round(
+                float(last["total_cost_usd"]) - float(first["total_cost_usd"]), 2
+            ),
+            "latest_max_severity": str(last["max_severity"]),
+        }
 
     return {
         "trend": trend,
+        "active_trend": active_trend,
+        "category_trends": category_trends,
+        "module_trends": module_trends,
+        "category_deltas": category_deltas,
+        "module_deltas": module_deltas,
         "total_scans": len(trend),
         "latest": trend[-1] if trend else None,
+        "latest_active": active_trend[-1] if active_trend else None,
     }
 
 
@@ -686,6 +776,127 @@ def get_repo_unresolved_findings(
     return unresolved[:limit]
 
 
+def get_repo_change_rollup(
+    db: Session, github_url: str, user_id: int | None = None
+) -> dict[str, Any] | None:
+    """Return latest-vs-previous scan deltas for a repository."""
+    scans = get_scan_history(db, github_url, limit=2, user_id=user_id)
+    if not scans:
+        return None
+
+    latest_scan = scans[0]
+    latest_findings = get_scan_findings(db, latest_scan.id, user_id=user_id) or []
+
+    if len(scans) < 2:
+        return {
+            "latest_scan_id": latest_scan.id,
+            "previous_scan_id": None,
+            "summary": {
+                "cost_delta_usd": round(float(latest_scan.total_cost_usd or 0.0), 2),
+                "debt_score_delta": round(float(latest_scan.debt_score or 0.0), 2),
+                "hours_delta": round(float(latest_scan.total_hours or 0.0), 2),
+                "finding_count_delta": len(latest_findings),
+            },
+            "new_debt": {
+                "count": len(latest_findings),
+                "cost_usd": round(
+                    sum(float(finding.get("cost_usd", 0.0)) for finding in latest_findings),
+                    2,
+                ),
+                "items": latest_findings[:20],
+            },
+            "existing_debt": {"count": 0, "cost_usd": 0.0, "items": []},
+            "resolved_debt": {"count": 0, "cost_usd": 0.0, "items": []},
+            "severity_worsened": [],
+            "severity_improved": [],
+            "category_deltas": {},
+        }
+
+    previous_scan = scans[1]
+    previous_findings = get_scan_findings(db, previous_scan.id, user_id=user_id) or []
+    comparison = compare_scans(
+        db,
+        previous_scan.id,
+        latest_scan.id,
+        user_id=user_id,
+    ) or {
+        "summary": {
+            "cost_delta_usd": 0.0,
+            "debt_score_delta": 0.0,
+            "hours_delta": 0.0,
+            "finding_count_delta": 0,
+        },
+        "added_findings": [],
+        "removed_findings": [],
+        "severity_changed": [],
+    }
+
+    previous_by_id = {finding.get("id"): finding for finding in previous_findings}
+    latest_by_id = {finding.get("id"): finding for finding in latest_findings}
+
+    new_items = comparison.get("added_findings", [])
+    resolved_items = comparison.get("removed_findings", [])
+    existing_items = [
+        latest_by_id[finding_id]
+        for finding_id in latest_by_id
+        if finding_id in previous_by_id
+    ]
+
+    severity_worsened = []
+    severity_improved = []
+    for change in comparison.get("severity_changed", []):
+        from_rank = severity_rank(str(change.get("from_severity", "low")))
+        to_rank = severity_rank(str(change.get("to_severity", "low")))
+        if to_rank > from_rank:
+            severity_worsened.append(change)
+        elif to_rank < from_rank:
+            severity_improved.append(change)
+
+    category_deltas: dict[str, dict[str, int]] = {}
+    for finding in new_items:
+        category = str(finding.get("category", "unknown"))
+        category_deltas.setdefault(category, {"new": 0, "resolved": 0, "net": 0})
+        category_deltas[category]["new"] += 1
+        category_deltas[category]["net"] += 1
+    for finding in resolved_items:
+        category = str(finding.get("category", "unknown"))
+        category_deltas.setdefault(category, {"new": 0, "resolved": 0, "net": 0})
+        category_deltas[category]["resolved"] += 1
+        category_deltas[category]["net"] -= 1
+
+    return {
+        "latest_scan_id": latest_scan.id,
+        "previous_scan_id": previous_scan.id,
+        "summary": comparison.get("summary", {}),
+        "new_debt": {
+            "count": len(new_items),
+            "cost_usd": round(
+                sum(float(finding.get("cost_usd", 0.0)) for finding in new_items), 2
+            ),
+            "items": new_items[:20],
+        },
+        "existing_debt": {
+            "count": len(existing_items),
+            "cost_usd": round(
+                sum(float(finding.get("cost_usd", 0.0)) for finding in existing_items),
+                2,
+            ),
+            "items": existing_items[:20],
+        },
+        "resolved_debt": {
+            "count": len(resolved_items),
+            "cost_usd": round(
+                sum(float(finding.get("cost_usd", 0.0)) for finding in resolved_items),
+                2,
+            ),
+            "items": resolved_items[:20],
+        },
+        "severity_worsened": severity_worsened[:20],
+        "severity_improved": severity_improved[:20],
+        "category_deltas": category_deltas,
+    }
+
+
 def get_repo_summary_rollup(
     db: Session, github_url: str, user_id: int | None = None
 ) -> dict[str, Any] | None:
@@ -698,6 +909,7 @@ def get_repo_summary_rollup(
     modules = get_scan_modules(db, latest_scan.id, user_id=user_id) or []
     roadmap = get_scan_roadmap(db, latest_scan.id, user_id=user_id) or {}
     triage = get_repo_triage_stats(db, github_url, user_id=user_id) or {}
+    changes = get_repo_change_rollup(db, github_url, user_id=user_id)
 
     return {
         "scan_id": latest_scan.id,
@@ -710,6 +922,7 @@ def get_repo_summary_rollup(
         "quick_wins": len(roadmap.get("quick_wins", [])),
         "strategic_items": len(roadmap.get("strategic", [])),
         "triage": triage,
+        "changes": changes,
         "top_modules": modules[:5],
     }
 

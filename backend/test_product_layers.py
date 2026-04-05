@@ -11,6 +11,8 @@ from database.connection import Base
 from database.crud import (
     compare_scans,
     add_finding_feedback,
+    get_repo_change_rollup,
+    get_rich_repo_trend,
     get_repo_summary_rollup,
     get_repo_triage_stats,
     get_repo_unresolved_findings,
@@ -733,5 +735,246 @@ def test_repo_rollups_surface_summary_triage_and_unresolved() -> None:
         assert summary["strategic_items"] == 1
         assert summary["triage"]["suppressed_findings"] == 1
         assert summary["top_modules"][0]["module"] == "app"
+    finally:
+        db.close()
+
+
+def test_repo_change_rollup_tracks_new_existing_and_resolved_debt() -> None:
+    """Repo change rollups should separate new, existing, and resolved findings."""
+    engine = create_engine("sqlite:///:memory:")
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+
+    db = TestingSessionLocal()
+    try:
+        github_url = "https://github.com/pallets/flask"
+        base_findings = [
+            {
+                "id": "shared-worse",
+                "file_path": "app/service.py",
+                "module": "app",
+                "category": "code_quality",
+                "subcategory": "complexity_hotspot",
+                "symbol_name": "handle",
+                "line_start": 10,
+                "line_end": 10,
+                "severity": "medium",
+                "business_impact": "medium",
+                "effort_hours": 3.0,
+                "cost_usd": 200.0,
+                "confidence": 0.8,
+                "source_tool": "git+static",
+                "status": "open",
+                "evidence": [],
+            },
+            {
+                "id": "resolved-doc",
+                "file_path": "app/docs.py",
+                "module": "app",
+                "category": "documentation",
+                "subcategory": "missing_docstring",
+                "symbol_name": None,
+                "line_start": 3,
+                "line_end": 3,
+                "severity": "low",
+                "business_impact": "low",
+                "effort_hours": 1.0,
+                "cost_usd": 40.0,
+                "confidence": 0.7,
+                "source_tool": "ast",
+                "status": "open",
+                "evidence": [],
+            },
+        ]
+        latest_findings = [
+            {
+                **base_findings[0],
+                "severity": "high",
+                "cost_usd": 260.0,
+            },
+            {
+                "id": "new-architecture",
+                "file_path": "app/core.py",
+                "module": "app",
+                "category": "architecture",
+                "subcategory": "dependency_cycle",
+                "symbol_name": None,
+                "line_start": 1,
+                "line_end": 1,
+                "severity": "critical",
+                "business_impact": "high",
+                "effort_hours": 8.0,
+                "cost_usd": 500.0,
+                "confidence": 0.9,
+                "source_tool": "architecture",
+                "status": "open",
+                "evidence": [],
+            },
+        ]
+
+        base_analysis = _build_repo_analysis(base_findings)
+        latest_analysis = _build_repo_analysis(latest_findings)
+        base_analysis["debt_score"] = 1.9
+        latest_analysis["debt_score"] = 3.2
+
+        save_scan(
+            db=db,
+            job_id="job-changes-base",
+            github_url=github_url,
+            analysis=base_analysis,
+            agent_state={"raw_analysis": base_analysis, "status": "complete"},
+            duration_seconds=1.0,
+            user_id=None,
+        )
+        save_scan(
+            db=db,
+            job_id="job-changes-latest",
+            github_url=github_url,
+            analysis=latest_analysis,
+            agent_state={"raw_analysis": latest_analysis, "status": "complete"},
+            duration_seconds=1.0,
+            user_id=None,
+        )
+
+        changes = get_repo_change_rollup(db, github_url)
+        summary = get_repo_summary_rollup(db, github_url)
+
+        assert changes is not None
+        assert changes["summary"]["finding_count_delta"] == 0
+        assert changes["new_debt"]["count"] == 1
+        assert changes["new_debt"]["items"][0]["id"] == "new-architecture"
+        assert changes["existing_debt"]["count"] == 1
+        assert changes["existing_debt"]["items"][0]["id"] == "shared-worse"
+        assert changes["resolved_debt"]["count"] == 1
+        assert changes["resolved_debt"]["items"][0]["id"] == "resolved-doc"
+        assert changes["severity_worsened"][0]["id"] == "shared-worse"
+        assert changes["category_deltas"]["architecture"]["new"] == 1
+        assert changes["category_deltas"]["documentation"]["resolved"] == 1
+
+        assert summary is not None
+        assert summary["changes"] is not None
+        assert summary["changes"]["new_debt"]["count"] == 1
+    finally:
+        db.close()
+
+
+def test_rich_repo_trend_includes_active_category_and_module_views() -> None:
+    """Rich repo trends should expose active, category, and module history."""
+    engine = create_engine("sqlite:///:memory:")
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+
+    db = TestingSessionLocal()
+    try:
+        github_url = "https://github.com/pallets/flask"
+        first_findings = [
+            {
+                "id": "trend-shared",
+                "file_path": "app/service.py",
+                "module": "app",
+                "category": "code_quality",
+                "subcategory": "complexity_hotspot",
+                "symbol_name": "handle",
+                "line_start": 10,
+                "line_end": 10,
+                "severity": "medium",
+                "business_impact": "medium",
+                "effort_hours": 3.0,
+                "cost_usd": 150.0,
+                "confidence": 0.8,
+                "source_tool": "git+static",
+                "status": "open",
+                "evidence": [],
+            },
+            {
+                "id": "trend-docs",
+                "file_path": "app/docs.py",
+                "module": "app",
+                "category": "documentation",
+                "subcategory": "missing_docstring",
+                "symbol_name": None,
+                "line_start": 1,
+                "line_end": 1,
+                "severity": "low",
+                "business_impact": "low",
+                "effort_hours": 1.0,
+                "cost_usd": 30.0,
+                "confidence": 0.6,
+                "source_tool": "ast",
+                "status": "open",
+                "evidence": [],
+            },
+        ]
+        second_findings = [
+            {
+                **first_findings[0],
+                "severity": "high",
+                "cost_usd": 220.0,
+            },
+            {
+                "id": "trend-arch",
+                "file_path": "core/cycle.py",
+                "module": "core",
+                "category": "architecture",
+                "subcategory": "dependency_cycle",
+                "symbol_name": None,
+                "line_start": 1,
+                "line_end": 1,
+                "severity": "high",
+                "business_impact": "high",
+                "effort_hours": 5.0,
+                "cost_usd": 300.0,
+                "confidence": 0.9,
+                "source_tool": "architecture",
+                "status": "open",
+                "evidence": [],
+            },
+        ]
+
+        first_analysis = _build_repo_analysis(first_findings)
+        second_analysis = _build_repo_analysis(
+            second_findings,
+            roadmap={"quick_wins": [], "strategic": []},
+        )
+
+        first_scan = save_scan(
+            db=db,
+            job_id="job-trend-1",
+            github_url=github_url,
+            analysis=first_analysis,
+            agent_state={"raw_analysis": first_analysis, "status": "complete"},
+            duration_seconds=1.0,
+            user_id=None,
+        )
+        save_scan(
+            db=db,
+            job_id="job-trend-2",
+            github_url=github_url,
+            analysis=second_analysis,
+            agent_state={"raw_analysis": second_analysis, "status": "complete"},
+            duration_seconds=1.0,
+            user_id=None,
+        )
+
+        suppress_finding(
+            db,
+            first_scan.id,
+            "trend-docs",
+            reason="Deferred docs cleanup",
+            created_by="tester",
+        )
+
+        trend = get_rich_repo_trend(db, github_url)
+
+        assert trend["total_scans"] == 2
+        assert len(trend["active_trend"]) == 2
+        assert trend["active_trend"][0]["active_finding_count"] == 1
+        assert trend["active_trend"][1]["active_finding_count"] == 2
+        assert trend["latest_active"]["active_cost_usd"] == 520.0
+        assert trend["category_trends"]["code_quality"][0]["count"] == 1
+        assert trend["category_deltas"]["architecture"]["count_delta"] == 0
+        assert trend["category_deltas"]["documentation"]["count_delta"] == 0
+        assert trend["module_trends"]["app"][1]["finding_count"] == 1
+        assert trend["module_deltas"]["core"]["finding_count_delta"] == 0
     finally:
         db.close()
