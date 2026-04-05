@@ -220,6 +220,32 @@ def _get_scan_analysis(scan: Scan) -> dict[str, Any]:
     return raw
 
 
+def _get_raw_findings_by_id(scan: Scan) -> dict[str, dict[str, Any]]:
+    """Return raw finding payloads keyed by finding id from the stored analysis."""
+    analysis = _get_scan_analysis(scan)
+    findings = analysis.get("findings", [])
+    if not isinstance(findings, list):
+        return {}
+    return {
+        str(finding.get("id")): finding
+        for finding in findings
+        if isinstance(finding, dict) and finding.get("id")
+    }
+
+
+def _get_raw_modules_by_name(scan: Scan) -> dict[str, dict[str, Any]]:
+    """Return raw module summaries keyed by module name from the stored analysis."""
+    analysis = _get_scan_analysis(scan)
+    modules = analysis.get("module_summaries", [])
+    if not isinstance(modules, list):
+        return {}
+    return {
+        str(module.get("module")): module
+        for module in modules
+        if isinstance(module, dict) and module.get("module") is not None
+    }
+
+
 def get_scan_by_id(
     db: Session, scan_id: str, user_id: int | None = None
 ) -> Scan | None:
@@ -261,6 +287,7 @@ def get_scan_findings(
     if not scan:
         return None
     if scan.findings:
+        raw_findings = _get_raw_findings_by_id(scan)
         return [
             {
                 "id": finding.finding_key or finding.id,
@@ -309,6 +336,21 @@ def get_scan_findings(
                     }
                     for feedback in finding.feedback_entries
                 ],
+                "owner_count": (
+                    raw_findings.get(finding.finding_key or finding.id, {}).get(
+                        "owner_count"
+                    )
+                ),
+                "top_contributor_share": (
+                    raw_findings.get(finding.finding_key or finding.id, {}).get(
+                        "top_contributor_share"
+                    )
+                ),
+                "ownership_risk": (
+                    raw_findings.get(finding.finding_key or finding.id, {}).get(
+                        "ownership_risk"
+                    )
+                ),
             }
             for finding in scan.findings
         ]
@@ -377,6 +419,7 @@ def get_scan_modules(
     if not scan:
         return None
     if scan.module_summaries:
+        raw_modules = _get_raw_modules_by_name(scan)
         return [
             {
                 "module": module.module,
@@ -385,6 +428,13 @@ def get_scan_modules(
                 "total_effort_hours": module.total_effort_hours,
                 "max_severity": module.max_severity,
                 "avg_confidence": module.avg_confidence,
+                "owner_count": raw_modules.get(module.module, {}).get("owner_count"),
+                "top_contributor_share": raw_modules.get(module.module, {}).get(
+                    "top_contributor_share"
+                ),
+                "ownership_risk": raw_modules.get(module.module, {}).get(
+                    "ownership_risk"
+                ),
             }
             for module in scan.module_summaries
         ]
@@ -921,6 +971,9 @@ def get_repo_summary_rollup(
         "module_count": len(modules),
         "quick_wins": len(roadmap.get("quick_wins", [])),
         "strategic_items": len(roadmap.get("strategic", [])),
+        "ownership_summary": (
+            _get_scan_analysis(latest_scan).get("ownership_summary", {}) or {}
+        ),
         "triage": triage,
         "changes": changes,
         "top_modules": modules[:5],

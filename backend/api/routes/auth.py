@@ -42,7 +42,7 @@ async def github_login() -> RedirectResponse:
 
 
 @router.get("/auth/github/callback")
-async def github_callback(code: str | None = None, request: Request | None = None) -> RedirectResponse:
+async def github_callback(code: str | None = None) -> RedirectResponse:
     """Handle GitHub OAuth callback and redirect to the frontend."""
     if not code:
         raise HTTPException(400, "Missing code")

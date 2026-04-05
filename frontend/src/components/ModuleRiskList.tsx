@@ -19,6 +19,19 @@ function severityTone(severity: string) {
   }
 }
 
+function ownershipTone(risk?: string | null) {
+  switch (risk) {
+    case 'critical':
+      return 'text-red-400';
+    case 'high':
+      return 'text-orange-400';
+    case 'medium':
+      return 'text-yellow-400';
+    default:
+      return 'text-gray-400';
+  }
+}
+
 export default function ModuleRiskList({ modules }: Props) {
   const topModules = modules.slice(0, 6);
 
@@ -47,10 +60,15 @@ export default function ModuleRiskList({ modules }: Props) {
                 <div>
                   <p className="text-white font-medium">{module.module}</p>
                   <p className="text-gray-500 text-sm">
-                    {module.finding_count} findings · {module.total_effort_hours.toFixed(1)}h
+                    {module.finding_count} findings ·{' '}
+                    {module.total_effort_hours.toFixed(1)}h
                   </p>
                 </div>
-                <p className={`text-sm font-medium ${severityTone(module.max_severity)}`}>
+                <p
+                  className={`text-sm font-medium ${severityTone(
+                    module.max_severity
+                  )}`}
+                >
                   {module.max_severity}
                 </p>
               </div>
@@ -60,6 +78,15 @@ export default function ModuleRiskList({ modules }: Props) {
                 </span>
                 <span className="text-gray-500">
                   confidence {Math.round(module.avg_confidence * 100)}%
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs mt-2">
+                <span className={ownershipTone(module.ownership_risk)}>
+                  ownership {module.ownership_risk || 'n/a'}
+                </span>
+                <span className="text-gray-500">
+                  {module.owner_count ?? 0} owners · top share{' '}
+                  {Math.round((module.top_contributor_share ?? 0) * 100)}%
                 </span>
               </div>
             </div>

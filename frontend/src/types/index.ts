@@ -194,6 +194,19 @@ export interface StructuredFinding {
   confidence?: number;
   status?: string;
   suppressed?: boolean;
+  owner_count?: number | null;
+  top_contributor_share?: number | null;
+  ownership_risk?: string | null;
+}
+
+export interface OwnershipSummary {
+  commit_sample_size: number;
+  unique_contributors: number;
+  active_contributors_90d: number;
+  bus_factor: number;
+  top_contributor_share: number;
+  siloed_hotspots: number;
+  handoff_hotspots: number;
 }
 
 export interface RepoTriageStats {
@@ -247,6 +260,9 @@ export interface ModuleSummaryDetail {
   total_effort_hours: number;
   max_severity: string;
   avg_confidence: number;
+  owner_count?: number | null;
+  top_contributor_share?: number | null;
+  ownership_risk?: string | null;
 }
 
 export interface RepoSummaryRollup {
@@ -259,6 +275,7 @@ export interface RepoSummaryRollup {
   module_count: number;
   quick_wins: number;
   strategic_items: number;
+  ownership_summary: OwnershipSummary;
   triage: RepoTriageStats;
   changes: RepoChangeRollup | null;
   top_modules: ModuleSummaryDetail[];

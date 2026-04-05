@@ -60,6 +60,14 @@ class FindingAggregator:
                 "evidence": self._build_evidence(item),
                 "status": "open",
             }
+            if item.get("owner_count") is not None:
+                finding["owner_count"] = int(item["owner_count"])
+            if item.get("top_contributor_share") is not None:
+                finding["top_contributor_share"] = round(
+                    float(item["top_contributor_share"]), 2
+                )
+            if item.get("ownership_risk") is not None:
+                finding["ownership_risk"] = str(item["ownership_risk"])
             findings.append(finding)
 
         findings.sort(
@@ -124,6 +132,17 @@ class FindingAggregator:
                     "summary": f"Package {item['package']} requires attention",
                 }
             )
+        if item.get("owner_count") is not None:
+            ownership_summary = (
+                f"{item['owner_count']} contributors"
+                f", top contributor share {float(item.get('top_contributor_share', 0.0)):.0%}"
+            )
+            evidence.append(
+                {
+                    "source": "ownership",
+                    "summary": ownership_summary,
+                }
+            )
 
         if not evidence:
             evidence.append(
@@ -135,7 +154,9 @@ class FindingAggregator:
         return evidence
 
     def summarize_modules(
-        self, findings: list[dict[str, Any]]
+        self,
+        findings: list[dict[str, Any]],
+        ownership_context: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         """Aggregate findings at the module level."""
         modules: dict[str, dict[str, Any]] = defaultdict(
@@ -160,18 +181,27 @@ class FindingAggregator:
             module["avg_confidence"] += finding["confidence"]
 
         summaries: list[dict[str, Any]] = []
+        module_ownership = (ownership_context or {}).get("modules", {})
         for module in modules.values():
             count = max(module["finding_count"], 1)
-            summaries.append(
-                {
-                    "module": module["module"],
-                    "finding_count": module["finding_count"],
-                    "total_cost_usd": round(module["total_cost_usd"], 2),
-                    "total_effort_hours": round(module["total_effort_hours"], 2),
-                    "max_severity": max_severity(module["severities"]),
-                    "avg_confidence": round(module["avg_confidence"] / count, 2),
-                }
-            )
+            summary = {
+                "module": module["module"],
+                "finding_count": module["finding_count"],
+                "total_cost_usd": round(module["total_cost_usd"], 2),
+                "total_effort_hours": round(module["total_effort_hours"], 2),
+                "max_severity": max_severity(module["severities"]),
+                "avg_confidence": round(module["avg_confidence"] / count, 2),
+            }
+            ownership = module_ownership.get(module["module"], {})
+            if ownership:
+                summary["owner_count"] = int(ownership.get("owner_count", 0))
+                summary["top_contributor_share"] = round(
+                    float(ownership.get("top_contributor_share", 0.0)), 2
+                )
+                summary["ownership_risk"] = str(
+                    ownership.get("ownership_risk", "low")
+                )
+            summaries.append(summary)
 
         summaries.sort(
             key=lambda m: (severity_rank(m["max_severity"]), m["total_cost_usd"]),
@@ -220,10 +250,16 @@ class FindingAggregator:
             "strategic": strategic[:10],
         }
 
-    def aggregate(self, debt_items: list[dict[str, Any]]) -> dict[str, Any]:
+    def aggregate(
+        self,
+        debt_items: list[dict[str, Any]],
+        ownership_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Run the full aggregation flow."""
         findings = self.normalize_findings(debt_items)
-        module_summaries = self.summarize_modules(findings)
+        module_summaries = self.summarize_modules(
+            findings, ownership_context=ownership_context
+        )
         roadmap = self.build_roadmap(findings)
 
         return {

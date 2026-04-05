@@ -321,6 +321,7 @@ def _normalize_result_payload(job_id: str, status: str, scan_id: str | None, sta
         "findings": raw_analysis.get("findings") or [],
         "module_summaries": raw_analysis.get("module_summaries") or [],
         "roadmap": raw_analysis.get("roadmap") or {},
+        "ownership_summary": raw_analysis.get("ownership_summary") or {},
         "executive_summary": executive_summary,
         "priority_actions": priority_actions,
         "roi_analysis": roi_analysis,

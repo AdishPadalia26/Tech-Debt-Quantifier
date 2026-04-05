@@ -15,6 +15,7 @@ function metricTone(value: number) {
 export default function RepositoryInsightsPanel({ summary }: Props) {
   const changes = summary.changes;
   const topModule = summary.top_modules[0];
+  const ownership = summary.ownership_summary;
 
   return (
     <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
@@ -22,7 +23,7 @@ export default function RepositoryInsightsPanel({ summary }: Props) {
         <div>
           <h3 className="text-lg font-semibold text-white">Repository Signals</h3>
           <p className="text-gray-400 text-sm">
-            Triage posture, remediation focus, and latest scan deltas
+            Triage posture, ownership concentration, and latest scan deltas
           </p>
         </div>
         <div className="text-right">
@@ -35,7 +36,7 @@ export default function RepositoryInsightsPanel({ summary }: Props) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-5">
         <div className="bg-gray-900/60 rounded-lg p-4 border border-gray-700">
           <p className="text-gray-400 text-xs uppercase tracking-wider mb-1">
             Active
@@ -69,13 +70,25 @@ export default function RepositoryInsightsPanel({ summary }: Props) {
         </div>
         <div className="bg-gray-900/60 rounded-lg p-4 border border-gray-700">
           <p className="text-gray-400 text-xs uppercase tracking-wider mb-1">
-            Top Module
+            Contributors
+          </p>
+          <p className="text-2xl font-bold text-white">
+            {ownership?.unique_contributors ?? 0}
+          </p>
+          <p className="text-gray-500 text-xs">
+            bus factor {ownership?.bus_factor ?? 0}
+          </p>
+        </div>
+        <div className="bg-gray-900/60 rounded-lg p-4 border border-gray-700">
+          <p className="text-gray-400 text-xs uppercase tracking-wider mb-1">
+            Ownership
           </p>
           <p className="text-lg font-semibold text-white truncate">
             {topModule?.module || 'N/A'}
           </p>
           <p className="text-gray-500 text-xs">
-            ${Math.round(topModule?.total_cost_usd || 0).toLocaleString()} at risk
+            {topModule?.ownership_risk || 'n/a'} risk Â·{' '}
+            {topModule?.owner_count ?? 0} owners
           </p>
         </div>
       </div>

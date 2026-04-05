@@ -169,6 +169,7 @@ class CostEstimator:
         """
         from data.vulnerability_fetcher import VulnerabilityFetcher
         from intelligence.benchmark_agent import BenchmarkAgent
+        from intelligence.ownership_analyzer import OwnershipAnalyzer
         from intelligence.repo_profiler import RepoProfiler
         from intelligence.security_cost_agent import SecurityCostAgent
         from services.finding_aggregator import FindingAggregator
@@ -226,6 +227,22 @@ class CostEstimator:
             })
             code_quality_cost += adjusted_cost
         logger.info(f"[COST EST] Code quality: {len(risky_files)} files, ${code_quality_cost:.2f}")
+
+        logger.info("[COST EST] Step 2a: Analyzing ownership concentration...")
+        hotspot_files = [item["file"] for item in risky_files]
+        ownership_analysis = OwnershipAnalyzer().analyze(
+            repo_path,
+            hotspot_files,
+        )
+        ownership_files = ownership_analysis.get("files", {})
+        for item in debt_items:
+            ownership = ownership_files.get(item.get("file", ""))
+            if not ownership:
+                continue
+            item["owner_count"] = ownership.get("owner_count")
+            item["top_contributor_share"] = ownership.get("top_contributor_share")
+            item["ownership_risk"] = ownership.get("ownership_risk")
+            item["ownership_bus_factor"] = ownership.get("bus_factor")
 
         logger.info("[COST EST] Step 2b: Running architecture analysis...")
         architecture_items = ArchitectureAnalyzer().analyze(repo_path, base_rate * 1.2)
@@ -322,7 +339,6 @@ class CostEstimator:
         logger.info(f"[COST EST] Documentation: {len(doc_issues)} issues, ${doc_cost:.2f}")
 
         logger.info("[COST EST] Step 4b: Checking test debt...")
-        hotspot_files = [item["file"] for item in risky_files]
         test_debt_items = TestDebtAnalyzer().find_test_gaps(repo_path, hotspot_files)
         test_debt_cost = 0.0
 
@@ -367,6 +383,15 @@ class CostEstimator:
             dep_cost += vuln.get("cost_usd", 0)
         logger.info(f"[COST EST] Dependencies: {len(dep_vulns)} vulnerabilities, ${dep_cost:.2f}")
 
+        for item in debt_items:
+            ownership = ownership_files.get(item.get("file", ""))
+            if not ownership:
+                continue
+            item["owner_count"] = ownership.get("owner_count")
+            item["top_contributor_share"] = ownership.get("top_contributor_share")
+            item["ownership_risk"] = ownership.get("ownership_risk")
+            item["ownership_bus_factor"] = ownership.get("bus_factor")
+
         function_count = complexity_results.get("total_functions", 0)
 
         baseline_hours = (FUNCTION_BASELINE_MINUTES / 60) * function_count
@@ -387,7 +412,10 @@ class CostEstimator:
         debt_score = self.calculate_debt_score(total_cost, function_count, cisq_per_function)
         sanity = self.sanity_check(total_cost, function_count, cisq_per_function)
         cost_by_category = self._categorize_costs(debt_items)
-        aggregated = FindingAggregator().aggregate(debt_items)
+        aggregated = FindingAggregator().aggregate(
+            debt_items,
+            ownership_context=ownership_analysis,
+        )
 
         cost_by_category["code_quality"]["cost_usd"] += baseline_cost * combined_multiplier
         cost_by_category["code_quality"]["hours"] += baseline_hours * combined_multiplier
@@ -417,6 +445,7 @@ class CostEstimator:
             "findings": aggregated["findings"],
             "module_summaries": aggregated["module_summaries"],
             "roadmap": aggregated["roadmap"],
+            "ownership_summary": ownership_analysis.get("summary", {}),
             "summary": {
                 "files_scanned": complexity_results.get("total_files_scanned", 0),
                 "functions_analyzed": function_count,

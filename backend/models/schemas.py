@@ -60,6 +60,18 @@ class DebtFinding(BaseModel):
     evidence: list[FindingEvidence] = Field(
         default_factory=list, description="Evidence supporting the finding"
     )
+    owner_count: int | None = Field(
+        default=None, description="Number of contributors seen for the file"
+    )
+    top_contributor_share: float | None = Field(
+        default=None,
+        ge=0,
+        le=1,
+        description="Share of file changes from the top contributor",
+    )
+    ownership_risk: str | None = Field(
+        default=None, description="Ownership concentration risk classification"
+    )
 
 
 class FindingSuppressionRequest(BaseModel):

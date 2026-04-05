@@ -1,8 +1,10 @@
 """Focused tests for product-layer analysis helpers."""
 
 import shutil
+import subprocess
 import uuid
 from pathlib import Path
+from shutil import which
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -26,6 +28,7 @@ from database.crud import (
     suppress_finding,
 )
 from services.finding_aggregator import FindingAggregator
+from intelligence.ownership_analyzer import OwnershipAnalyzer
 from tools.architecture_analysis import ArchitectureAnalyzer
 from tools.scoring import aggregate_repo_score, max_severity, severity_rank
 from tools.test_debt_analysis import TestDebtAnalyzer
@@ -82,6 +85,15 @@ def _build_repo_analysis(findings: list[dict], roadmap: dict | None = None) -> d
         "findings": findings,
         "module_summaries": module_summaries,
         "roadmap": roadmap or {},
+        "ownership_summary": {
+            "commit_sample_size": 0,
+            "unique_contributors": 0,
+            "active_contributors_90d": 0,
+            "bus_factor": 0,
+            "top_contributor_share": 0.0,
+            "siloed_hotspots": 0,
+            "handoff_hotspots": 0,
+        },
     }
 
 
@@ -135,12 +147,96 @@ def test_finding_aggregator_outputs() -> None:
         },
     ]
 
-    aggregated = FindingAggregator().aggregate(debt_items)
+    ownership_context = {
+        "modules": {
+            "app": {
+                "owner_count": 2,
+                "top_contributor_share": 0.75,
+                "ownership_risk": "high",
+            }
+        }
+    }
+    aggregated = FindingAggregator().aggregate(
+        debt_items, ownership_context=ownership_context
+    )
 
     assert len(aggregated["findings"]) == 2
     assert aggregated["findings"][0]["module"] == "app"
     assert aggregated["module_summaries"][0]["module"] == "app"
+    assert aggregated["module_summaries"][0]["owner_count"] == 2
     assert "quick_wins" in aggregated["roadmap"]
+
+
+def test_ownership_analyzer_profiles_contributor_concentration() -> None:
+    """Ownership analyzer should compute contributor and concentration metrics."""
+    if which("git") is None:
+        return
+
+    tmp_path = _make_workspace_temp_dir()
+    try:
+        subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.name", "Owner One"],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "owner1@example.com"],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+        )
+
+        app_dir = tmp_path / "app"
+        app_dir.mkdir()
+        service_file = app_dir / "service.py"
+
+        service_file.write_text("def handler():\n    return 1\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "initial"],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+        )
+
+        service_file.write_text("def handler():\n    value = 1\n    return value\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "--author", "Owner One <owner1@example.com>", "-m", "owner update"],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+        )
+
+        service_file.write_text(
+            "def handler():\n    value = 2\n    return value\n", encoding="utf-8"
+        )
+        subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "--author", "Owner Two <owner2@example.com>", "-m", "handoff update"],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+        )
+
+        analysis = OwnershipAnalyzer().analyze(
+            str(tmp_path),
+            hotspot_files=["app/service.py"],
+            max_commits=50,
+        )
+
+        file_profile = analysis["files"]["app/service.py"]
+        module_profile = analysis["modules"]["app"]
+
+        assert analysis["summary"]["unique_contributors"] == 2
+        assert file_profile["owner_count"] == 2
+        assert file_profile["top_contributor_share"] == 0.67
+        assert module_profile["ownership_risk"] in {"medium", "high"}
+        assert analysis["hotspots"][0]["file_path"] == "app/service.py"
+    finally:
+        shutil.rmtree(tmp_path, ignore_errors=True)
 
 
 def test_test_debt_analyzer_detects_missing_tests() -> None:
@@ -252,6 +348,9 @@ def test_rich_scan_persistence_round_trip() -> None:
                     "total_effort_hours": 3.0,
                     "max_severity": "high",
                     "avg_confidence": 0.8,
+                    "owner_count": 2,
+                    "top_contributor_share": 0.75,
+                    "ownership_risk": "high",
                 }
             ],
             "roadmap": {
@@ -270,6 +369,15 @@ def test_rich_scan_persistence_round_trip() -> None:
                 ],
                 "next_up": [],
                 "strategic": [],
+            },
+            "ownership_summary": {
+                "commit_sample_size": 12,
+                "unique_contributors": 3,
+                "active_contributors_90d": 2,
+                "bus_factor": 1,
+                "top_contributor_share": 0.8,
+                "siloed_hotspots": 1,
+                "handoff_hotspots": 0,
             },
             "summary": {"files_scanned": 1, "functions_analyzed": 1, "issues_found": 1},
         }
@@ -293,7 +401,10 @@ def test_rich_scan_persistence_round_trip() -> None:
         assert summary is not None
         assert summary["scan_id"] == scan.id
         assert findings and findings[0]["id"] == "finding-1"
+        assert findings[0]["owner_count"] is None
         assert modules and modules[0]["module"] == "app"
+        assert modules[0]["owner_count"] == 2
+        assert modules[0]["ownership_risk"] == "high"
         assert roadmap["quick_wins"][0]["finding_id"] == "finding-1"
     finally:
         db.close()
@@ -696,6 +807,15 @@ def test_repo_rollups_surface_summary_triage_and_unresolved() -> None:
         }
 
         analysis = _build_repo_analysis(findings, roadmap)
+        analysis["ownership_summary"] = {
+            "commit_sample_size": 14,
+            "unique_contributors": 3,
+            "active_contributors_90d": 2,
+            "bus_factor": 1,
+            "top_contributor_share": 0.78,
+            "siloed_hotspots": 1,
+            "handoff_hotspots": 0,
+        }
         scan = save_scan(
             db=db,
             job_id="job-rollups",
@@ -733,6 +853,7 @@ def test_repo_rollups_surface_summary_triage_and_unresolved() -> None:
         assert summary["finding_count"] == 3
         assert summary["quick_wins"] == 1
         assert summary["strategic_items"] == 1
+        assert summary["ownership_summary"]["unique_contributors"] == 3
         assert summary["triage"]["suppressed_findings"] == 1
         assert summary["top_modules"][0]["module"] == "app"
     finally:
