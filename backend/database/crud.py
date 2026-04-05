@@ -1,13 +1,20 @@
 """Database operations for scan persistence and history queries."""
 
-from datetime import datetime
+from datetime import datetime, UTC
 import logging
 from typing import Any
 
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
-from database.models import Repository, Scan, DebtItem
+from database.models import (
+    Repository,
+    Scan,
+    DebtItem,
+    Finding,
+    ModuleSummary,
+    RoadmapItem,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +114,7 @@ def save_scan(
     )
 
     db.add(scan)
+    db.flush()
 
     # Save individual debt items for trend analysis
     debt_items = analysis.get("debt_items", [])
@@ -125,8 +133,67 @@ def save_scan(
             )
         )
 
+    findings = analysis.get("findings", [])
+    for finding in findings[:250]:
+        db.add(
+            Finding(
+                scan_id=scan.id,
+                finding_key=finding.get("id"),
+                file_path=finding.get("file_path", ""),
+                module=finding.get("module", ""),
+                category=finding.get("category", ""),
+                subcategory=finding.get("subcategory"),
+                symbol_name=finding.get("symbol_name"),
+                line_start=finding.get("line_start"),
+                line_end=finding.get("line_end"),
+                severity=finding.get("severity"),
+                business_impact=finding.get("business_impact"),
+                effort_hours=finding.get("effort_hours", 0),
+                cost_usd=finding.get("cost_usd", 0),
+                confidence=finding.get("confidence", 0),
+                source_tool=finding.get("source_tool"),
+                status=finding.get("status", "open"),
+                evidence=finding.get("evidence", []),
+            )
+        )
+
+    module_summaries = analysis.get("module_summaries", [])
+    for module_summary in module_summaries[:200]:
+        db.add(
+            ModuleSummary(
+                scan_id=scan.id,
+                module=module_summary.get("module", ""),
+                finding_count=module_summary.get("finding_count", 0),
+                total_cost_usd=module_summary.get("total_cost_usd", 0),
+                total_effort_hours=module_summary.get("total_effort_hours", 0),
+                max_severity=module_summary.get("max_severity"),
+                avg_confidence=module_summary.get("avg_confidence", 0),
+            )
+        )
+
+    roadmap = analysis.get("roadmap", {})
+    for bucket, items in roadmap.items():
+        if not isinstance(items, list):
+            continue
+        for item in items[:100]:
+            db.add(
+                RoadmapItem(
+                    scan_id=scan.id,
+                    bucket=bucket,
+                    finding_id=item.get("finding_id"),
+                    title=item.get("title"),
+                    file_path=item.get("file_path", ""),
+                    module=item.get("module", ""),
+                    severity=item.get("severity"),
+                    business_impact=item.get("business_impact"),
+                    effort_hours=item.get("effort_hours", 0),
+                    cost_usd=item.get("cost_usd", 0),
+                    confidence=item.get("confidence", 0),
+                )
+            )
+
     # Update last_scanned_at on repo
-    repo.last_scanned_at = datetime.utcnow()
+    repo.last_scanned_at = datetime.now(UTC).replace(tzinfo=None)
     repo.primary_language = tech_stack.get("primary_language")
 
     db.commit()
@@ -190,6 +257,28 @@ def get_scan_findings(
     scan = get_scan_by_id(db, scan_id, user_id=user_id)
     if not scan:
         return None
+    if scan.findings:
+        return [
+            {
+                "id": finding.finding_key or finding.id,
+                "file_path": finding.file_path,
+                "module": finding.module,
+                "category": finding.category,
+                "subcategory": finding.subcategory,
+                "symbol_name": finding.symbol_name,
+                "line_start": finding.line_start,
+                "line_end": finding.line_end,
+                "severity": finding.severity,
+                "business_impact": finding.business_impact,
+                "effort_hours": finding.effort_hours,
+                "cost_usd": finding.cost_usd,
+                "confidence": finding.confidence,
+                "source_tool": finding.source_tool,
+                "status": finding.status,
+                "evidence": finding.evidence or [],
+            }
+            for finding in scan.findings
+        ]
     analysis = _get_scan_analysis(scan)
     findings = analysis.get("findings")
     return findings if isinstance(findings, list) else []
@@ -202,6 +291,18 @@ def get_scan_modules(
     scan = get_scan_by_id(db, scan_id, user_id=user_id)
     if not scan:
         return None
+    if scan.module_summaries:
+        return [
+            {
+                "module": module.module,
+                "finding_count": module.finding_count,
+                "total_cost_usd": module.total_cost_usd,
+                "total_effort_hours": module.total_effort_hours,
+                "max_severity": module.max_severity,
+                "avg_confidence": module.avg_confidence,
+            }
+            for module in scan.module_summaries
+        ]
     analysis = _get_scan_analysis(scan)
     modules = analysis.get("module_summaries")
     return modules if isinstance(modules, list) else []
@@ -214,6 +315,23 @@ def get_scan_roadmap(
     scan = get_scan_by_id(db, scan_id, user_id=user_id)
     if not scan:
         return None
+    if scan.roadmap_items:
+        roadmap: dict[str, list[dict[str, Any]]] = {}
+        for item in scan.roadmap_items:
+            roadmap.setdefault(item.bucket, []).append(
+                {
+                    "finding_id": item.finding_id,
+                    "title": item.title,
+                    "file_path": item.file_path,
+                    "module": item.module,
+                    "severity": item.severity,
+                    "business_impact": item.business_impact,
+                    "effort_hours": item.effort_hours,
+                    "cost_usd": item.cost_usd,
+                    "confidence": item.confidence,
+                }
+            )
+        return roadmap
     analysis = _get_scan_analysis(scan)
     roadmap = analysis.get("roadmap")
     return roadmap if isinstance(roadmap, dict) else {}
@@ -230,7 +348,9 @@ def get_rich_repo_trend(
     trend = []
     for scan in reversed(scans):
         analysis = _get_scan_analysis(scan)
-        roadmap = analysis.get("roadmap", {})
+        roadmap = get_scan_roadmap(db, scan.id, user_id=user_id) or {}
+        findings = get_scan_findings(db, scan.id, user_id=user_id) or []
+        modules = get_scan_modules(db, scan.id, user_id=user_id) or []
         trend.append(
             {
                 "scan_id": scan.id,
@@ -238,8 +358,8 @@ def get_rich_repo_trend(
                 "date_display": scan.created_at.strftime("%b %d") if scan.created_at else None,
                 "total_cost_usd": scan.total_cost_usd,
                 "debt_score": scan.debt_score,
-                "finding_count": len(analysis.get("findings", [])),
-                "module_count": len(analysis.get("module_summaries", [])),
+                "finding_count": len(findings),
+                "module_count": len(modules),
                 "quick_wins": len(roadmap.get("quick_wins", [])),
                 "strategic_items": len(roadmap.get("strategic", [])),
             }

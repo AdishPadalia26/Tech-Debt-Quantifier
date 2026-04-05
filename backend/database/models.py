@@ -120,6 +120,15 @@ class Scan(Base):
     debt_items = relationship(
         "DebtItem", back_populates="scan", cascade="all, delete-orphan"
     )
+    findings = relationship(
+        "Finding", back_populates="scan", cascade="all, delete-orphan"
+    )
+    module_summaries = relationship(
+        "ModuleSummary", back_populates="scan", cascade="all, delete-orphan"
+    )
+    roadmap_items = relationship(
+        "RoadmapItem", back_populates="scan", cascade="all, delete-orphan"
+    )
 
     # Index for fast history queries
     __table_args__ = (
@@ -150,3 +159,77 @@ class DebtItem(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     scan = relationship("Scan", back_populates="debt_items")
+
+
+class Finding(Base):
+    """Structured product finding persisted for each scan."""
+
+    __tablename__ = "findings"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    scan_id = Column(String, ForeignKey("scans.id"), nullable=False, index=True)
+
+    finding_key = Column(String, index=True)
+    file_path = Column(String, index=True)
+    module = Column(String, index=True)
+    category = Column(String, index=True)
+    subcategory = Column(String)
+    symbol_name = Column(String)
+    line_start = Column(Integer)
+    line_end = Column(Integer)
+    severity = Column(String, index=True)
+    business_impact = Column(String)
+    effort_hours = Column(Float)
+    cost_usd = Column(Float)
+    confidence = Column(Float)
+    source_tool = Column(String)
+    status = Column(String, default="open")
+    evidence = Column(JSON)
+
+    created_at = Column(DateTime, server_default=func.now())
+
+    scan = relationship("Scan", back_populates="findings")
+
+
+class ModuleSummary(Base):
+    """Module-level summary persisted for a scan."""
+
+    __tablename__ = "module_summaries"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    scan_id = Column(String, ForeignKey("scans.id"), nullable=False, index=True)
+
+    module = Column(String, index=True)
+    finding_count = Column(Integer, default=0)
+    total_cost_usd = Column(Float, default=0.0)
+    total_effort_hours = Column(Float, default=0.0)
+    max_severity = Column(String)
+    avg_confidence = Column(Float, default=0.0)
+
+    created_at = Column(DateTime, server_default=func.now())
+
+    scan = relationship("Scan", back_populates="module_summaries")
+
+
+class RoadmapItem(Base):
+    """Roadmap item persisted for a scan."""
+
+    __tablename__ = "roadmap_items"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    scan_id = Column(String, ForeignKey("scans.id"), nullable=False, index=True)
+
+    bucket = Column(String, index=True)
+    finding_id = Column(String, index=True)
+    title = Column(String)
+    file_path = Column(String, index=True)
+    module = Column(String, index=True)
+    severity = Column(String)
+    business_impact = Column(String)
+    effort_hours = Column(Float)
+    cost_usd = Column(Float)
+    confidence = Column(Float)
+
+    created_at = Column(DateTime, server_default=func.now())
+
+    scan = relationship("Scan", back_populates="roadmap_items")

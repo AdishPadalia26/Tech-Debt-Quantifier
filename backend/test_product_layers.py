@@ -2,6 +2,17 @@
 
 from pathlib import Path
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from database.connection import Base
+from database.crud import (
+    get_scan_findings,
+    get_scan_modules,
+    get_scan_roadmap,
+    get_scan_summary_data,
+    save_scan,
+)
 from services.finding_aggregator import FindingAggregator
 from tools.architecture_analysis import ArchitectureAnalyzer
 from tools.scoring import aggregate_repo_score, max_severity, severity_rank
@@ -94,3 +105,110 @@ def test_architecture_analyzer_detects_oversized_module(tmp_path: Path) -> None:
 
     assert findings
     assert any(item["type"] == "oversized_module" for item in findings)
+
+
+def test_rich_scan_persistence_round_trip() -> None:
+    """Structured findings, modules, and roadmap should persist in DB tables."""
+    engine = create_engine("sqlite:///:memory:")
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+
+    db = TestingSessionLocal()
+    try:
+        analysis = {
+            "total_cost_usd": 1200.0,
+            "debt_score": 3.4,
+            "total_remediation_hours": 14.0,
+            "total_remediation_sprints": 0.2,
+            "cost_by_category": {"code_quality": {"cost_usd": 1200.0, "hours": 14.0, "item_count": 2}},
+            "hourly_rates": {"blended_rate": 85.0, "confidence": "medium"},
+            "repo_profile": {
+                "tech_stack": {"primary_language": "py", "frameworks": ["flask"]},
+                "team": {"estimated_team_size": 2, "bus_factor": 1, "repo_age_days": 200},
+                "multipliers": {"combined_multiplier": 1.2},
+            },
+            "debt_items": [
+                {
+                    "file": "app/service.py",
+                    "function": "handle",
+                    "category": "code_quality",
+                    "severity": "high",
+                    "cost_usd": 400.0,
+                    "remediation_hours": 3.0,
+                    "complexity": 18,
+                    "churn_multiplier": 1.7,
+                }
+            ],
+            "findings": [
+                {
+                    "id": "finding-1",
+                    "file_path": "app/service.py",
+                    "module": "app",
+                    "category": "code_quality",
+                    "subcategory": "complexity_hotspot",
+                    "symbol_name": "handle",
+                    "line_start": 10,
+                    "line_end": 10,
+                    "severity": "high",
+                    "business_impact": "high",
+                    "effort_hours": 3.0,
+                    "cost_usd": 400.0,
+                    "confidence": 0.8,
+                    "source_tool": "git+static",
+                    "status": "open",
+                    "evidence": [{"source": "complexity", "summary": "Complexity score 18"}],
+                }
+            ],
+            "module_summaries": [
+                {
+                    "module": "app",
+                    "finding_count": 1,
+                    "total_cost_usd": 400.0,
+                    "total_effort_hours": 3.0,
+                    "max_severity": "high",
+                    "avg_confidence": 0.8,
+                }
+            ],
+            "roadmap": {
+                "quick_wins": [
+                    {
+                        "finding_id": "finding-1",
+                        "title": "Code Quality in app/service.py",
+                        "file_path": "app/service.py",
+                        "module": "app",
+                        "severity": "high",
+                        "business_impact": "high",
+                        "effort_hours": 3.0,
+                        "cost_usd": 400.0,
+                        "confidence": 0.8,
+                    }
+                ],
+                "next_up": [],
+                "strategic": [],
+            },
+            "summary": {"files_scanned": 1, "functions_analyzed": 1, "issues_found": 1},
+        }
+        agent_state = {"raw_analysis": analysis, "status": "complete"}
+
+        scan = save_scan(
+            db=db,
+            job_id="job-1",
+            github_url="https://github.com/pallets/flask",
+            analysis=analysis,
+            agent_state=agent_state,
+            duration_seconds=1.2,
+            user_id=None,
+        )
+
+        summary = get_scan_summary_data(db, scan.id)
+        findings = get_scan_findings(db, scan.id)
+        modules = get_scan_modules(db, scan.id)
+        roadmap = get_scan_roadmap(db, scan.id)
+
+        assert summary is not None
+        assert summary["scan_id"] == scan.id
+        assert findings and findings[0]["id"] == "finding-1"
+        assert modules and modules[0]["module"] == "app"
+        assert roadmap["quick_wins"][0]["finding_id"] == "finding-1"
+    finally:
+        db.close()
