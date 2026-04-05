@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
+import Link from "next/link";
 import { clearToken } from "@/lib/api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -32,8 +34,20 @@ export function HeaderAuth() {
     <div className="flex items-center gap-3">
       {user ? (
         <>
+          <Link
+            href="/import"
+            className="text-xs text-green-400 hover:text-green-300"
+          >
+            Import Repos
+          </Link>
           {user.avatar_url && (
-            <img src={user.avatar_url} alt={user.login} className="h-7 w-7 rounded-full border border-gray-600" />
+            <Image
+              src={user.avatar_url}
+              alt={user.login}
+              width={28}
+              height={28}
+              className="h-7 w-7 rounded-full border border-gray-600"
+            />
           )}
           <span className="text-sm text-gray-200">@{user.login}</span>
           <button onClick={handleLogout} className="text-xs text-gray-400 hover:text-gray-200">

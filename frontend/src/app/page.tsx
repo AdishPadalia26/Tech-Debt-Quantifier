@@ -9,6 +9,8 @@ import PriorityActions from '@/components/PriorityActions';
 import RepoProfile from '@/components/RepoProfile';
 import DebtTrendChart from '@/components/DebtTrendChart';
 import ActiveDebtChart from '@/components/ActiveDebtChart';
+import ModuleRiskList from '@/components/ModuleRiskList';
+import RoadmapBoard from '@/components/RoadmapBoard';
 import RepositoryInsightsPanel from '@/components/RepositoryInsightsPanel';
 import UnresolvedFindingsList from '@/components/UnresolvedFindingsList';
 import {
@@ -17,6 +19,9 @@ import {
   RepoHistory,
   RepoSummaryRollup,
   RichRepoTrend,
+  ScanFindingsResponse,
+  ScanModulesResponse,
+  ScanRoadmapResponse,
   UnresolvedFindingsResponse,
 } from '@/types';
 import {
@@ -24,7 +29,11 @@ import {
   getRepoHistoryRich,
   getRepositorySummary,
   getRepositoryUnresolved,
+  getScanFindings,
+  getScanModules,
+  getScanRoadmap,
 } from '@/lib/api';
+import { repoDetailPath } from '@/lib/routes';
 
 type AppState = 'idle' | 'analyzing' | 'complete' | 'error';
 
@@ -38,6 +47,9 @@ export default function Home() {
   const [richRepoHistory, setRichRepoHistory] = useState<RichRepoTrend | null>(null);
   const [unresolvedFindings, setUnresolvedFindings] =
     useState<UnresolvedFindingsResponse | null>(null);
+  const [scanModules, setScanModules] = useState<ScanModulesResponse | null>(null);
+  const [scanRoadmap, setScanRoadmap] = useState<ScanRoadmapResponse | null>(null);
+  const [scanFindings, setScanFindings] = useState<ScanFindingsResponse | null>(null);
   const [currentGithubUrl, setCurrentGithubUrl] = useState('');
   const [downloading, setDownloading] = useState(false);
   const [slackSending, setSlackSending] = useState(false);
@@ -61,6 +73,9 @@ export default function Home() {
     setRepoSummary(null);
     setRichRepoHistory(null);
     setUnresolvedFindings(null);
+    setScanModules(null);
+    setScanRoadmap(null);
+    setScanFindings(null);
     if (githubUrl) setCurrentGithubUrl(githubUrl);
   };
 
@@ -85,6 +100,17 @@ export default function Home() {
       setRepoSummary(summary);
       setRichRepoHistory(richHistory);
       setUnresolvedFindings(unresolved);
+
+      if (jobResult.scan_id) {
+        const [modules, roadmap, findings] = await Promise.all([
+          getScanModules(jobResult.scan_id),
+          getScanRoadmap(jobResult.scan_id),
+          getScanFindings(jobResult.scan_id, 8),
+        ]);
+        setScanModules(modules);
+        setScanRoadmap(roadmap);
+        setScanFindings(findings);
+      }
     } catch (e) {
       console.log('History not available yet:', e);
     }
@@ -124,6 +150,9 @@ export default function Home() {
     setRepoSummary(null);
     setRichRepoHistory(null);
     setUnresolvedFindings(null);
+    setScanModules(null);
+    setScanRoadmap(null);
+    setScanFindings(null);
   };
 
   useEffect(() => {
@@ -296,6 +325,30 @@ export default function Home() {
 
             {/* PDF Download Button */}
             <div className="flex flex-wrap gap-3 justify-end mt-4">
+              {result.scan_id && (
+                <Link
+                  href={`/scans/${result.scan_id}`}
+                  className="flex items-center gap-2 px-5 py-2.5
+                             bg-cyan-600 hover:bg-cyan-700
+                             text-white font-medium rounded-lg
+                             transition-colors text-sm"
+                >
+                  Open Scan Detail
+                </Link>
+              )}
+
+              {currentGithubUrl && (
+                <Link
+                  href={repoDetailPath(currentGithubUrl)}
+                  className="flex items-center gap-2 px-5 py-2.5
+                             bg-gray-700 hover:bg-gray-600
+                             text-white font-medium rounded-lg
+                             transition-colors text-sm"
+                >
+                  Open Repository Detail
+                </Link>
+              )}
+
               {/* PDF Button */}
               <button
                 onClick={handleDownloadPDF}
@@ -412,9 +465,22 @@ export default function Home() {
               )}
             </div>
 
-            {unresolvedFindings && (
-              <UnresolvedFindingsList findings={unresolvedFindings.items} />
-            )}
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              {scanModules && <ModuleRiskList modules={scanModules.modules} />}
+              {scanRoadmap && <RoadmapBoard roadmap={scanRoadmap.roadmap} />}
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              {unresolvedFindings && (
+                <UnresolvedFindingsList findings={unresolvedFindings.items} />
+              )}
+              {scanFindings && (
+                <UnresolvedFindingsList
+                  findings={scanFindings.findings}
+                  title="Current Scan Findings"
+                />
+              )}
+            </div>
 
             {/* Priority Actions */}
             {result.priority_actions && (

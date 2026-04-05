@@ -5,16 +5,8 @@ import Link from 'next/link';
 import ActiveDebtChart from '@/components/ActiveDebtChart';
 import RepositoryInsightsPanel from '@/components/RepositoryInsightsPanel';
 import UnresolvedFindingsList from '@/components/UnresolvedFindingsList';
-import {
-  getRepoHistoryRich,
-  getRepositorySummary,
-  getRepositoryUnresolved,
-} from '@/lib/api';
-import {
-  RepoSummaryRollup,
-  RichRepoTrend,
-  UnresolvedFindingsResponse,
-} from '@/types';
+import { useRepositoryInsights } from '@/hooks/useRepositoryInsights';
+import { repoDetailPath } from '@/lib/routes';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -85,11 +77,12 @@ export default function PortfolioPage() {
   const [newRepo, setNewRepo]     = useState('');
   const [adding, setAdding]       = useState(false);
   const [selectedRepoUrl, setSelectedRepoUrl] = useState<string | null>(null);
-  const [selectedSummary, setSelectedSummary] = useState<RepoSummaryRollup | null>(null);
-  const [selectedTrend, setSelectedTrend] = useState<RichRepoTrend | null>(null);
-  const [selectedUnresolved, setSelectedUnresolved] =
-    useState<UnresolvedFindingsResponse | null>(null);
-  const [insightLoading, setInsightLoading] = useState(false);
+  const {
+    summary: selectedSummary,
+    richTrend: selectedTrend,
+    unresolved: selectedUnresolved,
+    loading: insightLoading,
+  } = useRepositoryInsights(selectedRepoUrl ?? '', 6);
 
   const fetchData = useCallback(async () => {
     try {
@@ -108,34 +101,9 @@ export default function PortfolioPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const loadRepoInsights = useCallback(async (repoUrl: string) => {
-    setInsightLoading(true);
-    setSelectedRepoUrl(repoUrl);
-    try {
-      const [summaryData, trendData, unresolvedData] = await Promise.all([
-        getRepositorySummary(repoUrl),
-        getRepoHistoryRich(repoUrl),
-        getRepositoryUnresolved(repoUrl, 6),
-      ]);
-      setSelectedSummary(summaryData);
-      setSelectedTrend(trendData);
-      setSelectedUnresolved(unresolvedData);
-    } catch (e) {
-      console.error(e);
-      setSelectedSummary(null);
-      setSelectedTrend(null);
-      setSelectedUnresolved(null);
-    } finally {
-      setInsightLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
     if (!repos.length) {
       setSelectedRepoUrl(null);
-      setSelectedSummary(null);
-      setSelectedTrend(null);
-      setSelectedUnresolved(null);
       return;
     }
 
@@ -145,11 +113,11 @@ export default function PortfolioPage() {
     const nextRepo = currentStillExists ? selectedRepoUrl : repos[0].github_url;
 
     if (nextRepo && nextRepo !== selectedRepoUrl) {
-      void loadRepoInsights(nextRepo);
-    } else if (nextRepo && !selectedSummary && !insightLoading) {
-      void loadRepoInsights(nextRepo);
+      setSelectedRepoUrl(nextRepo);
+    } else if (nextRepo && !selectedRepoUrl) {
+      setSelectedRepoUrl(nextRepo);
     }
-  }, [repos, selectedRepoUrl, selectedSummary, insightLoading, loadRepoInsights]);
+  }, [repos, selectedRepoUrl]);
 
   const sorted = [...repos].sort((a, b) => {
     const av = a[sortBy] as number | string;
@@ -407,12 +375,12 @@ export default function PortfolioPage() {
 
                     {/* Repo name */}
                     <td className="px-4 py-3">
-                      <a href={repo.github_url}
-                         target="_blank" rel="noopener noreferrer"
+                      <Link
+                         href={repoDetailPath(repo.github_url)}
                          className="text-purple-400 hover:text-purple-300
                                     font-medium">
                         {name}
-                      </a>
+                      </Link>
                     </td>
 
                     {/* Risk badge */}
@@ -474,7 +442,7 @@ export default function PortfolioPage() {
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
                         <button
-                          onClick={() => void loadRepoInsights(repo.github_url)}
+                          onClick={() => setSelectedRepoUrl(repo.github_url)}
                           className={`text-xs px-2.5 py-1 rounded transition-colors ${
                             selectedRepoUrl === repo.github_url
                               ? 'bg-cyan-900/40 text-cyan-300'
@@ -483,6 +451,14 @@ export default function PortfolioPage() {
                         >
                           Inspect
                         </button>
+                        <Link
+                          href={repoDetailPath(repo.github_url)}
+                          className="text-xs px-2.5 py-1 rounded
+                                     bg-gray-800 text-gray-300
+                                     hover:bg-gray-700 transition-colors"
+                        >
+                          Open
+                        </Link>
                         <button
                           onClick={() => handleRescan(repo.github_url)}
                           disabled={scanning === repo.github_url}

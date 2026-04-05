@@ -321,3 +321,106 @@ export interface UnresolvedFindingsResponse {
   total: number;
   limit: number;
 }
+
+export interface ScanModulesResponse {
+  scan_id: string;
+  modules: ModuleSummaryDetail[];
+  total: number;
+}
+
+export interface RoadmapItem {
+  finding_id: string;
+  title: string;
+  file_path: string;
+  module?: string;
+  severity: string;
+  business_impact?: string;
+  effort_hours?: number;
+  cost_usd: number;
+  confidence?: number;
+}
+
+export interface ScanRoadmapResponse {
+  scan_id: string;
+  roadmap: Record<string, RoadmapItem[]>;
+}
+
+export interface ScanFindingsResponse {
+  scan_id: string;
+  findings: StructuredFinding[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ScanSummaryResponse {
+  scan_id: string;
+  repository_id: string;
+  job_id: string;
+  created_at: string | null;
+  total_cost_usd: number;
+  debt_score: number;
+  total_hours: number;
+  total_sprints: number;
+  cost_by_category: Record<string, CostByCategory>;
+  summary: Record<string, unknown>;
+}
+
+export interface ScanDetailResponse {
+  scan_id: string;
+  total_cost: number;
+  debt_score: number;
+  executive_summary?: string;
+  priority_actions?: PriorityAction[];
+  roi_analysis?: ROIAnalysis;
+  raw_result?: unknown;
+  created_at: string;
+}
+
+export interface ScanComparisonResponse {
+  base_scan_id: string;
+  target_scan_id: string;
+  summary: {
+    cost_delta_usd: number;
+    debt_score_delta: number;
+    hours_delta: number;
+    finding_count_delta: number;
+  };
+  added_findings: StructuredFinding[];
+  removed_findings: StructuredFinding[];
+  severity_changed: SeverityChange[];
+}
+
+export interface GitHubRepoOwner {
+  login: string;
+  avatar_url?: string | null;
+}
+
+export interface GitHubRepo {
+  id: number;
+  name: string;
+  full_name: string;
+  private: boolean;
+  html_url: string;
+  clone_url: string;
+  default_branch?: string | null;
+  description?: string | null;
+  language?: string | null;
+  updated_at?: string | null;
+  owner: GitHubRepoOwner;
+}
+
+export interface GitHubOrg {
+  login: string;
+  id: number;
+  avatar_url?: string | null;
+  description?: string | null;
+}
+
+export interface GitHubImportResponse {
+  repository_id: string;
+  github_url: string;
+  repo_name: string;
+  repo_owner: string;
+  imported: boolean;
+}

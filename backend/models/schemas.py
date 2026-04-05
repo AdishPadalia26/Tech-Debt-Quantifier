@@ -92,3 +92,51 @@ class DebtReport(BaseModel):
     findings: list[DebtFinding] = Field(
         default_factory=list, description="Structured findings for richer product flows"
     )
+
+
+class GitHubOwnerSummary(BaseModel):
+    """GitHub repository owner summary."""
+
+    login: str = Field(..., description="Owner or organization login")
+    avatar_url: str | None = Field(default=None, description="Owner avatar URL")
+
+
+class GitHubRepoSummary(BaseModel):
+    """Normalized GitHub repository info for import flows."""
+
+    id: int = Field(..., description="GitHub repository id")
+    name: str = Field(..., description="Repository name")
+    full_name: str = Field(..., description="owner/repo identifier")
+    private: bool = Field(..., description="Whether the repository is private")
+    html_url: str = Field(..., description="Repository web URL")
+    clone_url: str = Field(..., description="Repository clone URL")
+    default_branch: str | None = Field(default=None, description="Default branch")
+    description: str | None = Field(default=None, description="Repository description")
+    language: str | None = Field(default=None, description="Primary language")
+    updated_at: str | None = Field(default=None, description="Last updated timestamp")
+    owner: GitHubOwnerSummary = Field(..., description="Repository owner")
+
+
+class GitHubOrgSummary(BaseModel):
+    """GitHub organization info for repo import flows."""
+
+    login: str = Field(..., description="Organization login")
+    id: int = Field(..., description="Organization id")
+    avatar_url: str | None = Field(default=None, description="Organization avatar")
+    description: str | None = Field(default=None, description="Organization description")
+
+
+class GitHubRepoImportRequest(BaseModel):
+    """Request model for importing a GitHub repository into the workspace."""
+
+    github_url: str = Field(..., description="GitHub URL for the repository")
+
+
+class GitHubRepoImportResponse(BaseModel):
+    """Response model for imported repositories."""
+
+    repository_id: str = Field(..., description="Tracked repository id")
+    github_url: str = Field(..., description="Normalized GitHub URL")
+    repo_name: str = Field(..., description="Repository name")
+    repo_owner: str = Field(..., description="Repository owner")
+    imported: bool = Field(..., description="Whether the repository is now tracked")

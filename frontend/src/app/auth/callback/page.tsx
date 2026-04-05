@@ -15,7 +15,7 @@ export default function GithubCallback() {
     if (token) {
       window.localStorage.setItem("tdq_token", token);
     }
-    router.replace("/");
+    router.replace("/import");
   }, [router]);
 
   return (

@@ -12,11 +12,8 @@ from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, RedirectResponse
+from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
-from urllib.parse import urlencode
-import httpx
-from jose import jwt
 
 load_dotenv()
 
@@ -36,6 +33,8 @@ from database.crud import (
     save_scan,
 )
 from api.deps import get_current_user
+from api.routes.auth import router as auth_router
+from api.routes.github import router as github_router
 from api.routes.repositories import router as repositories_router
 from api.routes.scans import router as scans_router
 
@@ -49,17 +48,6 @@ except Exception as e:
     logger.error(traceback.format_exc())
 
 jobs: Dict[str, Any] = {}
-
-GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
-GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
-GITHUB_OAUTH_CALLBACK_URL = os.getenv("GITHUB_OAUTH_CALLBACK_URL", "")
-JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret")
-JWT_ALG = os.getenv("JWT_ALG", "HS256")
-FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:3000")
-
-GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
-GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
-GITHUB_API_USER_URL = "https://api.github.com/user"
 
 
 def _get_ollama_health() -> dict:
@@ -135,101 +123,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_router)
+app.include_router(github_router)
 app.include_router(repositories_router)
 app.include_router(scans_router)
-
-@app.get("/auth/github/login")
-async def github_login():
-    """Redirect to GitHub OAuth authorization page."""
-    if not GITHUB_CLIENT_ID or not GITHUB_OAUTH_CALLBACK_URL:
-        raise HTTPException(500, "GitHub OAuth not configured")
-
-    params = {
-        "client_id": GITHUB_CLIENT_ID,
-        "redirect_uri": GITHUB_OAUTH_CALLBACK_URL,
-        "scope": "read:user user:email",
-        "allow_signup": "true",
-    }
-    url = f"{GITHUB_AUTHORIZE_URL}?{urlencode(params)}"
-    return RedirectResponse(url)
-
-
-@app.get("/auth/github/callback")
-async def github_callback(code: str | None = None, request: Request = None):
-    """Handle GitHub OAuth callback, create JWT and redirect to frontend."""
-    if not code:
-        raise HTTPException(400, "Missing code")
-
-    async with httpx.AsyncClient() as client:
-        token_resp = await client.post(
-            GITHUB_TOKEN_URL,
-            headers={"Accept": "application/json"},
-            data={
-                "client_id": GITHUB_CLIENT_ID,
-                "client_secret": GITHUB_CLIENT_SECRET,
-                "code": code,
-                "redirect_uri": GITHUB_OAUTH_CALLBACK_URL,
-            },
-        )
-        token_data = token_resp.json()
-        access_token = token_data.get("access_token")
-        if not access_token:
-            raise HTTPException(400, "Failed to get access token")
-
-        user_resp = await client.get(
-            GITHUB_API_USER_URL,
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Accept": "application/vnd.github+json",
-            },
-        )
-        gh = user_resp.json()
-
-    db = SessionLocal()
-    try:
-        github_id = str(gh.get("id"))
-        if not github_id:
-            raise HTTPException(400, "Invalid GitHub user")
-
-        user = db.query(User).filter(User.github_id == github_id).first()
-        if not user:
-            user = User(
-                github_id=github_id,
-                login=gh.get("login"),
-                name=gh.get("name"),
-                avatar_url=gh.get("avatar_url"),
-                html_url=gh.get("html_url"),
-                email=gh.get("email"),
-            )
-            db.add(user)
-        else:
-            user.login = gh.get("login")
-            user.name = gh.get("name")
-            user.avatar_url = gh.get("avatar_url")
-            user.html_url = gh.get("html_url")
-
-        db.commit()
-        db.refresh(user)
-    finally:
-        db.close()
-
-    token_payload = {"sub": str(user.id), "login": user.login}
-    jwt_token = jwt.encode(token_payload, JWT_SECRET, algorithm=JWT_ALG)
-
-    redirect_url = f"{FRONTEND_ORIGIN}/auth/callback#token={jwt_token}"
-    return RedirectResponse(redirect_url)
-
-
-@app.get("/me")
-async def get_me(user: User = Depends(get_current_user)):
-    """Get current user info."""
-    return {
-        "id": user.id,
-        "login": user.login,
-        "name": user.name,
-        "avatar_url": user.avatar_url,
-        "html_url": user.html_url,
-    }
 
 
 @app.on_event("startup")
