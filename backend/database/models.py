@@ -189,6 +189,12 @@ class Finding(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     scan = relationship("Scan", back_populates="findings")
+    suppressions = relationship(
+        "FindingSuppression", back_populates="finding", cascade="all, delete-orphan"
+    )
+    feedback_entries = relationship(
+        "FindingFeedback", back_populates="finding", cascade="all, delete-orphan"
+    )
 
 
 class ModuleSummary(Base):
@@ -233,3 +239,34 @@ class RoadmapItem(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     scan = relationship("Scan", back_populates="roadmap_items")
+
+
+class FindingSuppression(Base):
+    """Suppression record for a structured finding."""
+
+    __tablename__ = "finding_suppressions"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    finding_id = Column(String, ForeignKey("findings.id"), nullable=False, index=True)
+    reason = Column(Text, nullable=False)
+    created_by = Column(String)
+    active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+    finding = relationship("Finding", back_populates="suppressions")
+
+
+class FindingFeedback(Base):
+    """Human feedback attached to a structured finding."""
+
+    __tablename__ = "finding_feedback"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    finding_id = Column(String, ForeignKey("findings.id"), nullable=False, index=True)
+    feedback_type = Column(String, nullable=False)
+    severity_override = Column(String)
+    notes = Column(Text)
+    created_by = Column(String)
+    created_at = Column(DateTime, server_default=func.now())
+
+    finding = relationship("Finding", back_populates="feedback_entries")

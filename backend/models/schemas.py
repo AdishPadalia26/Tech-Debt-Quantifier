@@ -62,6 +62,26 @@ class DebtFinding(BaseModel):
     )
 
 
+class FindingSuppressionRequest(BaseModel):
+    """Request model for suppressing a finding."""
+
+    reason: str = Field(..., min_length=3, description="Why this finding is suppressed")
+
+
+class FindingFeedbackRequest(BaseModel):
+    """Request model for attaching feedback to a finding."""
+
+    feedback_type: str = Field(
+        ...,
+        description="Feedback classification such as true_positive, false_positive, accepted_risk",
+    )
+    severity_override: str | None = Field(
+        default=None,
+        description="Optional human override for finding severity",
+    )
+    notes: str | None = Field(default=None, description="Optional reviewer notes")
+
+
 class DebtReport(BaseModel):
     """Complete technical debt report for a repository."""
 

@@ -27,7 +27,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-from models.schemas import AnalyzeRequest, AnalyzeResponse
+from models.schemas import (
+    AnalyzeRequest,
+    AnalyzeResponse,
+    FindingSuppressionRequest,
+    FindingFeedbackRequest,
+)
 from database.connection import DB_AVAILABLE, SessionLocal, engine
 from database.models import Base, User
 from database.crud import (
@@ -37,9 +42,16 @@ from database.crud import (
     get_all_repositories,
     get_scan_summary_data,
     get_scan_findings,
+    query_scan_findings,
     get_scan_modules,
     get_scan_roadmap,
     get_rich_repo_trend,
+    compare_scans,
+    suppress_finding,
+    add_finding_feedback,
+    get_repo_triage_stats,
+    get_repo_unresolved_findings,
+    get_repo_summary_rollup,
 )
 
 try:
@@ -613,6 +625,72 @@ async def list_repositories(user: User = Depends(get_current_user)):
         db.close()
 
 
+@app.get("/repositories/{repo_url:path}/summary")
+async def get_repository_summary(
+    repo_url: str, user: User = Depends(get_current_user)
+):
+    """Get a high-level rollup for the latest completed repository scan."""
+    if not DB_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available.")
+
+    db = SessionLocal()
+    try:
+        summary = get_repo_summary_rollup(db, repo_url, user_id=user.id)
+        if summary is None:
+            raise HTTPException(404, "No completed scans found for repository")
+        return summary
+    finally:
+        db.close()
+
+
+@app.get("/repositories/{repo_url:path}/triage")
+async def get_repository_triage(
+    repo_url: str, user: User = Depends(get_current_user)
+):
+    """Get triage metrics for the latest completed repository scan."""
+    if not DB_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available.")
+
+    db = SessionLocal()
+    try:
+        triage = get_repo_triage_stats(db, repo_url, user_id=user.id)
+        if triage is None:
+            raise HTTPException(404, "No completed scans found for repository")
+        return triage
+    finally:
+        db.close()
+
+
+@app.get("/repositories/{repo_url:path}/unresolved")
+async def get_repository_unresolved(
+    repo_url: str,
+    limit: int = 20,
+    user: User = Depends(get_current_user),
+):
+    """Get unresolved findings from the latest completed repository scan."""
+    if not DB_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available.")
+
+    db = SessionLocal()
+    try:
+        findings = get_repo_unresolved_findings(
+            db,
+            repo_url,
+            user_id=user.id,
+            limit=limit,
+        )
+        if findings is None:
+            raise HTTPException(404, "No completed scans found for repository")
+        return {
+            "github_url": normalize_repo_id(repo_url),
+            "items": findings,
+            "total": len(findings),
+            "limit": limit,
+        }
+    finally:
+        db.close()
+
+
 @app.get("/scan/{scan_id}")
 async def get_scan(scan_id: str, user: User = Depends(get_current_user)):
     """Get a specific scan by ID."""
@@ -658,7 +736,14 @@ async def get_scan_summary(scan_id: str, user: User = Depends(get_current_user))
 
 @app.get("/scan/{scan_id}/findings")
 async def get_scan_findings_endpoint(
-    scan_id: str, user: User = Depends(get_current_user)
+    scan_id: str,
+    category: str | None = None,
+    severity: str | None = None,
+    module: str | None = None,
+    min_confidence: float | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    user: User = Depends(get_current_user),
 ):
     """Get structured findings for a specific scan."""
     if not DB_AVAILABLE:
@@ -666,10 +751,20 @@ async def get_scan_findings_endpoint(
 
     db = SessionLocal()
     try:
-        findings = get_scan_findings(db, scan_id, user_id=user.id)
+        findings = query_scan_findings(
+            db,
+            scan_id,
+            user_id=user.id,
+            category=category,
+            severity=severity,
+            module=module,
+            min_confidence=min_confidence,
+            limit=limit,
+            offset=offset,
+        )
         if findings is None:
             raise HTTPException(404, "Scan not found")
-        return {"scan_id": scan_id, "findings": findings, "total": len(findings)}
+        return {"scan_id": scan_id, "findings": findings["items"], "total": findings["total"], "limit": findings["limit"], "offset": findings["offset"]}
     finally:
         db.close()
 
@@ -706,6 +801,89 @@ async def get_scan_roadmap_endpoint(
         if roadmap is None:
             raise HTTPException(404, "Scan not found")
         return {"scan_id": scan_id, "roadmap": roadmap}
+    finally:
+        db.close()
+
+
+@app.get("/scan/compare")
+async def compare_scan_endpoint(
+    base_scan_id: str,
+    target_scan_id: str,
+    user: User = Depends(get_current_user),
+):
+    """Compare two scans and return deltas in cost, score, and findings."""
+    if not DB_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available.")
+
+    db = SessionLocal()
+    try:
+        comparison = compare_scans(
+            db,
+            base_scan_id,
+            target_scan_id,
+            user_id=user.id,
+        )
+        if comparison is None:
+            raise HTTPException(404, "One or both scans not found")
+        return comparison
+    finally:
+        db.close()
+
+
+@app.post("/scan/{scan_id}/findings/{finding_id}/suppress")
+async def suppress_finding_endpoint(
+    scan_id: str,
+    finding_id: str,
+    request: FindingSuppressionRequest,
+    user: User = Depends(get_current_user),
+):
+    """Suppress a finding for the given scan."""
+    if not DB_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available.")
+
+    db = SessionLocal()
+    try:
+        suppression = suppress_finding(
+            db,
+            scan_id,
+            finding_id,
+            reason=request.reason,
+            created_by=user.login,
+            user_id=user.id,
+        )
+        if suppression is None:
+            raise HTTPException(404, "Finding not found")
+        return {"scan_id": scan_id, "finding_id": finding_id, "suppression": suppression}
+    finally:
+        db.close()
+
+
+@app.post("/scan/{scan_id}/findings/{finding_id}/feedback")
+async def add_finding_feedback_endpoint(
+    scan_id: str,
+    finding_id: str,
+    request: FindingFeedbackRequest,
+    user: User = Depends(get_current_user),
+):
+    """Attach human feedback to a finding for the given scan."""
+    if not DB_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available.")
+
+    db = SessionLocal()
+    try:
+        feedback = add_finding_feedback(
+            db,
+            scan_id,
+            finding_id,
+            feedback_type=request.feedback_type,
+            severity_override=request.severity_override,
+            notes=request.notes,
+            created_by=user.login,
+            user_id=user.id,
+        )
+        if feedback is None:
+            raise HTTPException(404, "Finding not found")
+        return {"scan_id": scan_id, "finding_id": finding_id, "feedback": feedback}
     finally:
         db.close()
 
