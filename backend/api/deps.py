@@ -45,6 +45,31 @@ def get_current_user(
         db.close()
 
 
+def get_current_user_optional(
+    creds: HTTPAuthorizationCredentials = Depends(auth_scheme),
+) -> User | None:
+    """Return the authenticated user when present, else allow anonymous access."""
+    if not creds:
+        return None
+
+    token = creds.credentials
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
+    except JWTError:
+        return None
+
+    user_id = payload.get("sub")
+    if user_id is None:
+        return None
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).get(int(user_id))
+        return user
+    finally:
+        db.close()
+
+
 def get_github_access_token(payload: dict = Depends(get_jwt_payload)) -> str:
     """Return the GitHub access token stored in the signed JWT."""
     token = payload.get("gh_token")

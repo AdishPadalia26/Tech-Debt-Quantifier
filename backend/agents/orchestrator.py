@@ -69,6 +69,7 @@ class TechDebtOrchestrator:
             "executive_summary": None,
             "priority_actions": None,
             "roi_analysis": None,
+            "llm_insights": None,
             "job_id": str(uuid.uuid4()),
             "status": "queued",
             "error": None,

@@ -37,6 +37,9 @@ async def get_scan(scan_id: str, user: User = Depends(get_current_user)):
             "executive_summary": scan.executive_summary,
             "priority_actions": scan.priority_actions,
             "roi_analysis": scan.roi_analysis,
+            "llm_insights": (scan.raw_result or {}).get("llm_insights")
+            or ((scan.raw_result or {}).get("raw_analysis") or {}).get("llm_insights")
+            or {},
             "raw_result": scan.raw_result,
             "created_at": scan.created_at.isoformat(),
         }

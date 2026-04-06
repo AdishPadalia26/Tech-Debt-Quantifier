@@ -5,7 +5,9 @@ import subprocess
 import uuid
 from pathlib import Path
 from shutil import which
+from types import SimpleNamespace
 
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -29,6 +31,9 @@ from database.crud import (
 )
 from services.finding_aggregator import FindingAggregator
 from intelligence.ownership_analyzer import OwnershipAnalyzer
+from intelligence.local_llm_service import LocalLLMService
+from intelligence.report_writer_agent import ReportWriterAgent
+from intelligence.semantic_triage_agent import SemanticTriageAgent
 from tools.architecture_analysis import ArchitectureAnalyzer
 from tools.dead_code_analysis import DeadCodeAnalyzer
 from tools.dependency_analysis import DependencyDebtAnalyzer
@@ -37,6 +42,19 @@ from tools.performance_analysis import PerformanceAnalyzer
 from tools.reliability_analysis import ReliabilityAnalyzer
 from tools.scoring import aggregate_repo_score, max_severity, severity_rank
 from tools.test_debt_analysis import TestDebtAnalyzer
+
+
+class _FakeLLM:
+    """Tiny async fake LLM for bounded unit tests."""
+
+    def __init__(self, response: str, *, should_fail: bool = False) -> None:
+        self.response = response
+        self.should_fail = should_fail
+
+    async def ainvoke(self, prompt: str):
+        if self.should_fail:
+            raise RuntimeError("LLM unavailable")
+        return SimpleNamespace(content=self.response)
 
 
 def _build_repo_analysis(findings: list[dict], roadmap: dict | None = None) -> dict:
@@ -1224,3 +1242,98 @@ def test_main_app_includes_extracted_route_groups() -> None:
     assert "/portfolio/summary" in route_paths
     assert "/report/{job_id}/pdf" in route_paths
     assert "/integrations/status" in route_paths
+
+
+def test_analyze_endpoint_allows_anonymous_submission(monkeypatch) -> None:
+    """Anonymous users should be able to queue an analysis request."""
+    import main as backend_main
+
+    monkeypatch.setattr(backend_main, "ORCHESTRATOR_AVAILABLE", True)
+
+    client = TestClient(backend_main.app)
+    response = client.post(
+        "/analyze",
+        json={
+            "github_url": "https://github.com/pallets/flask",
+            "repo_id": "pallets/flask",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "queued"
+    job_id = payload["job_id"]
+    assert backend_main.jobs[job_id]["user_id"] is None
+
+
+async def _run_semantic_triage_with_fake_llm() -> list[dict]:
+    service = LocalLLMService(llm=_FakeLLM(
+        '[{"finding_id":"f-1","debt_type":"architecture","justified":false,'
+        '"remediation_scope":"module","action_hint":"Split the module","confidence_note":"clear structural smell"}]'
+    ))
+    agent = SemanticTriageAgent(service)
+    return await agent.triage(
+        [
+            {
+                "id": "f-1",
+                "category": "architecture",
+                "module": "app",
+                "file_path": "app/core.py",
+            }
+        ]
+    )
+
+
+def test_local_llm_service_extracts_json() -> None:
+    """Local LLM service should extract fenced JSON correctly."""
+    service = LocalLLMService(llm=_FakeLLM("```json\n{\"ok\":true}\n```"))
+    import asyncio
+
+    parsed = asyncio.run(service.invoke_json("ignored"))
+    assert parsed == {"ok": True}
+
+
+def test_semantic_triage_agent_uses_structured_llm_output() -> None:
+    """Semantic triage should normalize structured local-LLM output."""
+    import asyncio
+
+    triage = asyncio.run(_run_semantic_triage_with_fake_llm())
+    assert triage[0]["finding_id"] == "f-1"
+    assert triage[0]["remediation_scope"] == "module"
+    assert triage[0]["action_hint"] == "Split the module"
+
+
+def test_report_writer_falls_back_when_llm_unavailable() -> None:
+    """Report writer should generate deterministic fallback outputs on LLM failure."""
+    import asyncio
+
+    service = LocalLLMService(llm=_FakeLLM("", should_fail=True))
+    writer = ReportWriterAgent(service)
+    analysis = {
+        "total_cost_usd": 1200.0,
+        "debt_score": 3.2,
+        "total_remediation_hours": 18.0,
+        "module_summaries": [{"module": "app"}],
+    }
+    insights = {"architecture_review": {"summary": "Architecture risk is concentrated in app."}}
+
+    summary = asyncio.run(writer.executive_summary(analysis, insights))
+    priorities = asyncio.run(
+        writer.priority_actions(
+            [
+                {
+                    "id": "f-1",
+                    "category": "architecture",
+                    "module": "app",
+                    "file_path": "app/core.py",
+                    "effort_hours": 5.0,
+                    "cost_usd": 500.0,
+                }
+            ],
+            [{"finding_id": "f-1", "action_hint": "Split responsibilities"}],
+        )
+    )
+
+    assert "app" in summary
+    assert priorities[0]["file_or_module"] == "app"
+    assert priorities[0]["why"] == "Split responsibilities"

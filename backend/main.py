@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.deps import get_current_user
+from api.deps import get_current_user, get_current_user_optional
 from api.routes.auth import router as auth_router
 from api.routes.github import router as github_router
 from api.routes.integrations import (
@@ -128,6 +128,7 @@ def _normalize_result_payload(
     priority_actions = result.get("priority_actions") or state.get("priority_actions") or []
     executive_summary = result.get("executive_summary") or state.get("executive_summary") or ""
     roi_analysis = result.get("roi_analysis") or state.get("roi_analysis") or {}
+    llm_insights = result.get("llm_insights") or state.get("llm_insights") or raw_analysis.get("llm_insights") or {}
 
     return {
         "job_id": job_id,
@@ -146,6 +147,7 @@ def _normalize_result_payload(
         "executive_summary": executive_summary,
         "priority_actions": priority_actions,
         "roi_analysis": roi_analysis,
+        "llm_insights": llm_insights,
         "sanity_check": raw_analysis.get("sanity_check") or {},
         "hourly_rates": raw_analysis.get("hourly_rates") or {},
         "repo_profile": raw_analysis.get("repo_profile") or {},
@@ -227,7 +229,7 @@ async def detailed_health() -> dict[str, Any]:
 async def analyze_repo(
     request: AnalyzeRequest,
     background_tasks: BackgroundTasks,
-    user: User = Depends(get_current_user),
+    user: User | None = Depends(get_current_user_optional),
 ) -> AnalyzeResponse:
     """Queue an async repository analysis job."""
     if not ORCHESTRATOR_AVAILABLE:
@@ -242,10 +244,21 @@ async def analyze_repo(
         "result": None,
         "error": None,
         "github_url": request.github_url,
-        "user_id": user.id,
+        "user_id": user.id if user else None,
     }
-    logger.info("Job %s queued for %s (user: %s)", job_id, request.github_url, user.id)
-    background_tasks.add_task(run_analysis_job, job_id, request.github_url, repo_id, user.id)
+    logger.info(
+        "Job %s queued for %s (user: %s)",
+        job_id,
+        request.github_url,
+        user.id if user else "anonymous",
+    )
+    background_tasks.add_task(
+        run_analysis_job,
+        job_id,
+        request.github_url,
+        repo_id,
+        user.id if user else None,
+    )
     return AnalyzeResponse(
         job_id=job_id,
         status="queued",

@@ -22,6 +22,7 @@ class AgentState(TypedDict):
     executive_summary: Optional[str]
     priority_actions: Optional[list]
     roi_analysis: Optional[dict]
+    llm_insights: Optional[dict]
 
     job_id: str
     status: str
