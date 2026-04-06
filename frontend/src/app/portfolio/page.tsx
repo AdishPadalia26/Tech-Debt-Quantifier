@@ -17,12 +17,10 @@ function getToken(): string | null {
 
 async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const token = getToken();
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-    ...(options.headers || {}),
-  };
+  const headers = new Headers(options.headers);
+  headers.set('Content-Type', 'application/json');
   if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+    headers.set('Authorization', `Bearer ${token}`);
   }
   return fetch(url, { ...options, headers });
 }

@@ -30,6 +30,11 @@ from database.crud import (
 from services.finding_aggregator import FindingAggregator
 from intelligence.ownership_analyzer import OwnershipAnalyzer
 from tools.architecture_analysis import ArchitectureAnalyzer
+from tools.dead_code_analysis import DeadCodeAnalyzer
+from tools.dependency_analysis import DependencyDebtAnalyzer
+from tools.duplication_analysis import DuplicationAnalyzer
+from tools.performance_analysis import PerformanceAnalyzer
+from tools.reliability_analysis import ReliabilityAnalyzer
 from tools.scoring import aggregate_repo_score, max_severity, severity_rank
 from tools.test_debt_analysis import TestDebtAnalyzer
 
@@ -284,6 +289,115 @@ def test_architecture_analyzer_detects_oversized_module() -> None:
 
         assert findings
         assert any(item["type"] == "oversized_module" for item in findings)
+    finally:
+        shutil.rmtree(tmp_path, ignore_errors=True)
+
+
+def test_duplication_analyzer_detects_duplicate_logic() -> None:
+    """Duplication analyzer should flag repeated function bodies across files."""
+    tmp_path = _make_workspace_temp_dir()
+    try:
+        module_dir = tmp_path / "app"
+        module_dir.mkdir()
+        source = (
+            "def normalize(value):\n"
+            "    cleaned = value.strip().lower()\n"
+            "    if not cleaned:\n"
+            "        return 'unknown'\n"
+            "    return cleaned\n"
+        )
+        (module_dir / "a.py").write_text(source, encoding="utf-8")
+        (module_dir / "b.py").write_text(source.replace("normalize", "sanitize"), encoding="utf-8")
+
+        findings = DuplicationAnalyzer().analyze(str(tmp_path), hourly_rate=100.0)
+
+        assert findings
+        assert any(item["type"] == "duplicate_logic" for item in findings)
+    finally:
+        shutil.rmtree(tmp_path, ignore_errors=True)
+
+
+def test_dependency_analyzer_detects_loose_versions() -> None:
+    """Dependency analyzer should flag range and wildcard version specs."""
+    tmp_path = _make_workspace_temp_dir()
+    try:
+        (tmp_path / "requirements.txt").write_text(
+            "requests>=2.0\nflask\n", encoding="utf-8"
+        )
+        findings = DependencyDebtAnalyzer().analyze(str(tmp_path), hourly_rate=100.0)
+
+        assert len(findings) >= 2
+        assert {item["type"] for item in findings} >= {"range_pinned_version", "unbounded_version"}
+    finally:
+        shutil.rmtree(tmp_path, ignore_errors=True)
+
+
+def test_reliability_analyzer_detects_risky_exception_patterns() -> None:
+    """Reliability analyzer should flag bare except and silent handlers."""
+    tmp_path = _make_workspace_temp_dir()
+    try:
+        app_dir = tmp_path / "app"
+        app_dir.mkdir()
+        (app_dir / "service.py").write_text(
+            "def run(items=[]):\n"
+            "    try:\n"
+            "        return items[0]\n"
+            "    except:\n"
+            "        pass\n",
+            encoding="utf-8",
+        )
+        findings = ReliabilityAnalyzer().analyze(str(tmp_path), hourly_rate=100.0)
+
+        assert len(findings) >= 2
+        assert any(item["type"] == "bare_except" for item in findings)
+        assert any(item["type"] == "silent_exception_handler" for item in findings)
+        assert any(item["type"] == "mutable_default_argument" for item in findings)
+    finally:
+        shutil.rmtree(tmp_path, ignore_errors=True)
+
+
+def test_performance_analyzer_detects_nested_loop() -> None:
+    """Performance analyzer should flag nested loops."""
+    tmp_path = _make_workspace_temp_dir()
+    try:
+        app_dir = tmp_path / "app"
+        app_dir.mkdir()
+        (app_dir / "perf.py").write_text(
+            "def compute(rows):\n"
+            "    total = 0\n"
+            "    for row in rows:\n"
+            "        for value in row:\n"
+            "            total += value\n"
+            "    return total\n",
+            encoding="utf-8",
+        )
+        findings = PerformanceAnalyzer().analyze(str(tmp_path), hourly_rate=100.0)
+
+        assert findings
+        assert any(item["type"] == "nested_loop" for item in findings)
+    finally:
+        shutil.rmtree(tmp_path, ignore_errors=True)
+
+
+def test_dead_code_analyzer_detects_unreachable_and_unused_private_helpers() -> None:
+    """Dead code analyzer should flag unreachable code and unused private functions."""
+    tmp_path = _make_workspace_temp_dir()
+    try:
+        app_dir = tmp_path / "app"
+        app_dir.mkdir()
+        (app_dir / "dead.py").write_text(
+            "def _helper():\n"
+            "    return 1\n\n"
+            "def run():\n"
+            "    return 5\n"
+            "    print('never')\n",
+            encoding="utf-8",
+        )
+        findings = DeadCodeAnalyzer().analyze(str(tmp_path), hourly_rate=100.0)
+
+        assert len(findings) >= 2
+        assert any(item["type"] == "unreachable_code" for item in findings)
+        assert any(item["type"] == "unused_private_function" for item in findings)
     finally:
         shutil.rmtree(tmp_path, ignore_errors=True)
 
@@ -1099,3 +1213,14 @@ def test_rich_repo_trend_includes_active_category_and_module_views() -> None:
         assert trend["module_deltas"]["core"]["finding_count_delta"] == 0
     finally:
         db.close()
+
+
+def test_main_app_includes_extracted_route_groups() -> None:
+    """Main app should expose extracted portfolio, report, and integration routes."""
+    from main import app
+
+    route_paths = {getattr(route, "path", "") for route in app.routes}
+    assert "/portfolio" in route_paths
+    assert "/portfolio/summary" in route_paths
+    assert "/report/{job_id}/pdf" in route_paths
+    assert "/integrations/status" in route_paths

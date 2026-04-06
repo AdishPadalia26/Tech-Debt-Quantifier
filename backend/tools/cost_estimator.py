@@ -174,7 +174,12 @@ class CostEstimator:
         from intelligence.security_cost_agent import SecurityCostAgent
         from services.finding_aggregator import FindingAggregator
         from tools.architecture_analysis import ArchitectureAnalyzer
+        from tools.dead_code_analysis import DeadCodeAnalyzer
+        from tools.dependency_analysis import DependencyDebtAnalyzer
+        from tools.duplication_analysis import DuplicationAnalyzer
         from tools.git_mining import GitMiner
+        from tools.performance_analysis import PerformanceAnalyzer
+        from tools.reliability_analysis import ReliabilityAnalyzer
         from tools.static_analysis import StaticAnalyzer
         from tools.test_debt_analysis import TestDebtAnalyzer
 
@@ -254,6 +259,54 @@ class CostEstimator:
             architecture_cost += arch_item["cost_usd"]
         logger.info(
             f"[COST EST] Architecture: {len(architecture_items)} issues, ${architecture_cost:.2f}"
+        )
+
+        logger.info("[COST EST] Step 2c: Running duplication analysis...")
+        duplication_items = DuplicationAnalyzer().analyze(repo_path, base_rate)
+        duplication_cost = 0.0
+        for item in duplication_items:
+            item["rate"] = round(base_rate, 2)
+            item["rate_source"] = "Dynamic blend"
+            debt_items.append(item)
+            duplication_cost += item["cost_usd"]
+        logger.info(
+            f"[COST EST] Duplication: {len(duplication_items)} issues, ${duplication_cost:.2f}"
+        )
+
+        logger.info("[COST EST] Step 2d: Running reliability analysis...")
+        reliability_items = ReliabilityAnalyzer().analyze(repo_path, base_rate)
+        reliability_cost = 0.0
+        for item in reliability_items:
+            item["rate"] = round(base_rate, 2)
+            item["rate_source"] = "Dynamic blend"
+            debt_items.append(item)
+            reliability_cost += item["cost_usd"]
+        logger.info(
+            f"[COST EST] Reliability: {len(reliability_items)} issues, ${reliability_cost:.2f}"
+        )
+
+        logger.info("[COST EST] Step 2e: Running performance analysis...")
+        performance_items = PerformanceAnalyzer().analyze(repo_path, base_rate)
+        performance_cost = 0.0
+        for item in performance_items:
+            item["rate"] = round(base_rate, 2)
+            item["rate_source"] = "Dynamic blend"
+            debt_items.append(item)
+            performance_cost += item["cost_usd"]
+        logger.info(
+            f"[COST EST] Performance: {len(performance_items)} issues, ${performance_cost:.2f}"
+        )
+
+        logger.info("[COST EST] Step 2f: Running dead code analysis...")
+        dead_code_items = DeadCodeAnalyzer().analyze(repo_path, base_rate)
+        dead_code_cost = 0.0
+        for item in dead_code_items:
+            item["rate"] = round(base_rate, 2)
+            item["rate_source"] = "Dynamic blend"
+            debt_items.append(item)
+            dead_code_cost += item["cost_usd"]
+        logger.info(
+            f"[COST EST] Dead code: {len(dead_code_items)} issues, ${dead_code_cost:.2f}"
         )
 
         logger.info("[COST EST] Step 3: Running security scan with risk weighting...")
@@ -357,6 +410,15 @@ class CostEstimator:
         dep_vulns = vuln_fetcher.check_dependencies_sync(repo_path)
         dep_cost = 0.0
 
+        logger.info("[COST EST] Step 5a: Checking dependency hygiene...")
+        dependency_hygiene_items = DependencyDebtAnalyzer().analyze(repo_path, base_rate)
+        dependency_hygiene_cost = 0.0
+        for item in dependency_hygiene_items:
+            item["rate"] = round(base_rate, 2)
+            item["rate_source"] = "Dynamic blend"
+            debt_items.append(item)
+            dependency_hygiene_cost += item["cost_usd"]
+
         for vuln in dep_vulns:
             severity = str(vuln.get("severity", "UNKNOWN")).lower()
             confidence = calculate_confidence(category="dependency")
@@ -381,7 +443,12 @@ class CostEstimator:
             finding["cost_usd"] = vuln.get("cost_usd", 0)
             debt_items.append(finding)
             dep_cost += vuln.get("cost_usd", 0)
-        logger.info(f"[COST EST] Dependencies: {len(dep_vulns)} vulnerabilities, ${dep_cost:.2f}")
+        logger.info(
+            "[COST EST] Dependencies: %s hygiene issues + %s vulnerabilities, $%.2f",
+            len(dependency_hygiene_items),
+            len(dep_vulns),
+            dependency_hygiene_cost + dep_cost,
+        )
 
         for item in debt_items:
             ownership = ownership_files.get(item.get("file", ""))

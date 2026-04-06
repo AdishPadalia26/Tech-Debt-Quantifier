@@ -4,9 +4,15 @@ import Link from 'next/link';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+type DebugJob = {
+  job_id: string;
+  status: string;
+  url?: string;
+};
+
 export default function DebugIndexPage() {
   const [jobId, setJobId] = useState('');
-  const [jobs, setJobs] = useState<any[]>([]);
+  const [jobs, setJobs] = useState<DebugJob[]>([]);
 
   useEffect(() => {
     fetch(`${API}/jobs`).then(r => r.json()).then(d => setJobs(d.jobs || [])).catch(() => {});

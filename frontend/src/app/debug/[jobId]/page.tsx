@@ -4,9 +4,19 @@ import { useEffect, useState } from 'react';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+type DebugResult = {
+  raw_analysis?: {
+    debt_score?: number;
+    total_cost_usd?: number;
+    total_remediation_hours?: number;
+    cost_by_category?: Record<string, unknown>;
+  };
+  priority_actions?: unknown[];
+} & Record<string, unknown>;
+
 export default function DebugResultsPage({ params }: { params: { jobId: string } }) {
   const { jobId } = params;
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<DebugResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -19,8 +29,12 @@ export default function DebugResultsPage({ params }: { params: { jobId: string }
         }
         const json = await res.json();
         setData(json);
-      } catch (e: any) {
-        setError(e.message || 'Request failed');
+      } catch (e: unknown) {
+        if (e instanceof Error) {
+          setError(e.message);
+        } else {
+          setError('Request failed');
+        }
       }
     };
     fetchData();
