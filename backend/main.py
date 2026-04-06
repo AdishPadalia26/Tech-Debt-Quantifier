@@ -116,7 +116,12 @@ def normalize_repo_id(github_url: str) -> str:
 def _normalize_result_payload(
     job_id: str, status: str, scan_id: str | None, state: dict[str, Any]
 ) -> dict[str, Any]:
-    """Normalize in-memory analysis state into a stable API payload."""
+    """Normalize in-memory analysis state into a stable API payload.
+
+    The results endpoint is polled by the frontend progress UI, so keep this
+    payload intentionally lean. Detailed findings, modules, roadmap, and raw
+    analysis can be fetched through scan-specific endpoints after completion.
+    """
     result = state.get("result", {}) if isinstance(state, dict) else {}
     raw_analysis = (
         result.get("raw_analysis")
@@ -139,10 +144,6 @@ def _normalize_result_payload(
         "total_remediation_hours": raw_analysis.get("total_remediation_hours") or 0,
         "total_remediation_sprints": raw_analysis.get("total_remediation_sprints") or 0,
         "cost_by_category": raw_analysis.get("cost_by_category") or {},
-        "debt_items": raw_analysis.get("debt_items") or [],
-        "findings": raw_analysis.get("findings") or [],
-        "module_summaries": raw_analysis.get("module_summaries") or [],
-        "roadmap": raw_analysis.get("roadmap") or {},
         "ownership_summary": raw_analysis.get("ownership_summary") or {},
         "executive_summary": executive_summary,
         "priority_actions": priority_actions,
@@ -152,8 +153,6 @@ def _normalize_result_payload(
         "hourly_rates": raw_analysis.get("hourly_rates") or {},
         "repo_profile": raw_analysis.get("repo_profile") or {},
         "data_sources_used": raw_analysis.get("data_sources_used") or [],
-        "raw_analysis": raw_analysis,
-        "raw": state,
     }
 
 

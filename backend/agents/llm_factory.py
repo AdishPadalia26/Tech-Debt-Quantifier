@@ -38,6 +38,7 @@ def _get_ollama_llm(task: str) -> BaseLLM:
 
     model_name = os.getenv("OLLAMA_MODEL", "qwen3.5:latest")
     base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+    timeout_seconds = float(os.getenv("LOCAL_LLM_TIMEOUT_SECONDS", "20"))
 
     logger.info(f"Using Ollama model: {model_name} @ {base_url}")
     return ChatOpenAI(
@@ -45,6 +46,7 @@ def _get_ollama_llm(task: str) -> BaseLLM:
         temperature=0.1,
         api_key=os.getenv("OLLAMA_API_KEY", "ollama"),
         base_url=base_url,
+        timeout=timeout_seconds,
     )
 
 

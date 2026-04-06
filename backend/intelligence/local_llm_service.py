@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import os
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -13,6 +15,7 @@ class LocalLLMService:
     """Thin wrapper around the configured local LLM with safe fallbacks."""
 
     def __init__(self, llm: Any | None = None) -> None:
+        self.timeout_seconds = float(os.getenv("LOCAL_LLM_TIMEOUT_SECONDS", "20"))
         if llm is not None:
             self.llm = llm
         else:
@@ -23,7 +26,10 @@ class LocalLLMService:
     async def invoke_text(self, prompt: str) -> str | None:
         """Invoke the model and return text content, or None on failure."""
         try:
-            result = await self.llm.ainvoke(prompt)
+            result = await asyncio.wait_for(
+                self.llm.ainvoke(prompt),
+                timeout=self.timeout_seconds,
+            )
             if isinstance(result, str):
                 return result
             content = getattr(result, "content", None)
@@ -35,6 +41,12 @@ class LocalLLMService:
                     for part in content
                 )
             return str(result)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Local LLM text invocation timed out after %.1fs",
+                self.timeout_seconds,
+            )
+            return None
         except Exception as exc:
             logger.warning("Local LLM text invocation failed: %s", exc)
             return None

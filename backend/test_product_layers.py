@@ -57,6 +57,16 @@ class _FakeLLM:
         return SimpleNamespace(content=self.response)
 
 
+class _SlowFakeLLM:
+    """Tiny async fake LLM that simulates a hung local model."""
+
+    async def ainvoke(self, prompt: str):
+        import asyncio
+
+        await asyncio.sleep(0.05)
+        return SimpleNamespace(content='{"ok": true}')
+
+
 def _build_repo_analysis(findings: list[dict], roadmap: dict | None = None) -> dict:
     """Create a compact analysis payload for structured persistence tests."""
     total_cost = float(sum(float(item.get("cost_usd", 0.0)) for item in findings))
@@ -1248,7 +1258,11 @@ def test_analyze_endpoint_allows_anonymous_submission(monkeypatch) -> None:
     """Anonymous users should be able to queue an analysis request."""
     import main as backend_main
 
+    async def _fake_run_analysis_job(*args, **kwargs) -> None:
+        return None
+
     monkeypatch.setattr(backend_main, "ORCHESTRATOR_AVAILABLE", True)
+    monkeypatch.setattr(backend_main, "run_analysis_job", _fake_run_analysis_job)
 
     client = TestClient(backend_main.app)
     response = client.post(
@@ -1264,6 +1278,46 @@ def test_analyze_endpoint_allows_anonymous_submission(monkeypatch) -> None:
     assert payload["status"] == "queued"
     job_id = payload["job_id"]
     assert backend_main.jobs[job_id]["user_id"] is None
+
+
+def test_results_payload_stays_lightweight() -> None:
+    """Polled result payloads should omit bulky raw analysis blobs."""
+    from main import _normalize_result_payload
+
+    state = {
+        "raw_analysis": {
+            "debt_score": 2.1,
+            "total_cost_usd": 1234.0,
+            "total_remediation_hours": 12.0,
+            "total_remediation_sprints": 0.15,
+            "cost_by_category": {"code_quality": {"cost_usd": 100.0}},
+            "debt_items": [{"id": "huge"}],
+            "findings": [{"id": "finding-1"}],
+            "module_summaries": [{"module": "app"}],
+            "roadmap": {"quick_wins": [{"id": "roadmap-1"}]},
+            "ownership_summary": {"unique_contributors": 2},
+            "sanity_check": {"assessment": "ok"},
+            "hourly_rates": {"confidence": "medium"},
+            "repo_profile": {"tech_stack": {}},
+            "data_sources_used": ["BLS"],
+            "llm_insights": {"provider": "local"},
+        },
+        "executive_summary": "Summary",
+        "priority_actions": [{"rank": 1}],
+        "roi_analysis": {"total_fix_cost": 1234.0},
+        "llm_insights": {"provider": "local"},
+    }
+
+    payload = _normalize_result_payload("job-1", "complete", "scan-1", state)
+
+    assert payload["job_id"] == "job-1"
+    assert payload["scan_id"] == "scan-1"
+    assert "raw" not in payload
+    assert "raw_analysis" not in payload
+    assert "debt_items" not in payload
+    assert "findings" not in payload
+    assert "module_summaries" not in payload
+    assert "roadmap" not in payload
 
 
 async def _run_semantic_triage_with_fake_llm() -> list[dict]:
@@ -1291,6 +1345,17 @@ def test_local_llm_service_extracts_json() -> None:
 
     parsed = asyncio.run(service.invoke_json("ignored"))
     assert parsed == {"ok": True}
+
+
+def test_local_llm_service_times_out_cleanly(monkeypatch) -> None:
+    """Local LLM service should fall back cleanly when the model stalls."""
+    import asyncio
+
+    monkeypatch.setenv("LOCAL_LLM_TIMEOUT_SECONDS", "0.01")
+    service = LocalLLMService(llm=_SlowFakeLLM())
+
+    parsed = asyncio.run(service.invoke_json("ignored"))
+    assert parsed is None
 
 
 def test_semantic_triage_agent_uses_structured_llm_output() -> None:
