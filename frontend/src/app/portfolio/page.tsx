@@ -51,6 +51,10 @@ interface PortfolioSummary {
   best_score: number;
 }
 
+function asNumber(value: unknown, fallback: number = 0): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
 const RISK_STYLES = {
   critical: 'bg-red-900/40 text-red-400 border border-red-800',
   high:     'bg-orange-900/40 text-orange-400 border border-orange-800',
@@ -219,14 +223,26 @@ export default function PortfolioPage() {
       {summary && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           {[
-            { label: 'Repos Tracked',  value: summary.total_repos,
-              fmt: (v: number) => v.toString() },
-            { label: 'Avg Debt Score', value: summary.avg_debt_score,
-              fmt: (v: number) => `${v.toFixed(1)}/10` },
-            { label: 'Total Debt Cost', value: summary.total_cost_usd,
-              fmt: (v: number) => `$${(v/1000).toFixed(0)}k` },
-            { label: 'Total Fix Hours', value: summary.total_hours,
-              fmt: (v: number) => `${v.toFixed(0)}h` },
+            {
+              label: 'Repos Tracked',
+              value: asNumber(summary.total_repos),
+              fmt: (v: number) => v.toString(),
+            },
+            {
+              label: 'Avg Debt Score',
+              value: asNumber(summary.avg_debt_score),
+              fmt: (v: number) => `${v.toFixed(1)}/10`,
+            },
+            {
+              label: 'Total Debt Cost',
+              value: asNumber(summary.total_cost_usd),
+              fmt: (v: number) => `$${(v / 1000).toFixed(0)}k`,
+            },
+            {
+              label: 'Total Fix Hours',
+              value: asNumber(summary.total_hours),
+              fmt: (v: number) => `${v.toFixed(0)}h`,
+            },
           ].map(card => (
             <div key={card.label}
                  className="bg-gray-900 rounded-xl p-5 border border-gray-800">

@@ -3,12 +3,47 @@
 @tailwind utilities;
 
 :root {
-  --background: #111827;
-  --foreground: #f9fafb;
+  --background: #0f0e0d;
+  --foreground: #cdccca;
+  --card: #1c1b19;
+  --card-foreground: #cdccca;
+  --popover: #201f1d;
+  --popover-foreground: #cdccca;
+  --primary: #4f98a3;
+  --primary-foreground: #0f0e0d;
+  --secondary: #22211f;
+  --secondary-foreground: #cdccca;
+  --muted: #2d2c2a;
+  --muted-foreground: #797876;
+  --accent: #313b3b;
+  --accent-foreground: #4f98a3;
+  --destructive: #dd6974;
+  --destructive-foreground: #0f0e0d;
+  --border: rgba(205, 204, 202, 0.08);
+  --input: #22211f;
+  --ring: #4f98a3;
+  --radius: 0.5rem;
 }
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    color-scheme: dark;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply min-h-screen bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    background-image:
+      radial-gradient(circle at top, rgba(79, 152, 163, 0.08), transparent 32%),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.015), transparent 35%);
+  }
+
+  a {
+    @apply transition-colors;
+  }
 }
