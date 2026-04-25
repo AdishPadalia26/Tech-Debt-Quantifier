@@ -1,530 +1,902 @@
-from reportlab.lib.pagesizes import letter
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
-from reportlab.lib.colors import HexColor
-from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table,
-    TableStyle, HRFlowable, PageBreak
-)
-from reportlab.lib.enums import TA_LEFT, TA_CENTER
-import io
+"""Professional PDF report generation for Tech Debt Quantifier."""
+
+from __future__ import annotations
+
+import os
 import re
-import logging
 from datetime import datetime
+from io import BytesIO
+from typing import Any
 
-logger = logging.getLogger(__name__)
+from reportlab.lib.colors import HexColor
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import mm
+from reportlab.platypus import (
+    Flowable,
+    HRFlowable,
+    KeepTogether,
+    PageBreak,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
-PURPLE       = HexColor('#8b5cf6')
-DARK_BG      = HexColor('#1f2937')
-CARD_BG      = HexColor('#111827')
-LIGHT_GRAY   = HexColor('#9ca3af')
-WHITE        = HexColor('#ffffff')
-GREEN        = HexColor('#10b981')
-RED          = HexColor('#ef4444')
-YELLOW       = HexColor('#f59e0b')
-DARK_PURPLE  = HexColor('#6d28d9')
+C_BG = HexColor("#0f0e0d")
+C_SURFACE = HexColor("#1c1b19")
+C_BORDER = HexColor("#2d2c2a")
+C_TEXT = HexColor("#cdccca")
+C_MUTED = HexColor("#797876")
+C_PRIMARY = HexColor("#4f98a3")
+C_SUCCESS = HexColor("#6daa45")
+C_WARNING = HexColor("#e8af34")
+C_DANGER = HexColor("#dd6974")
+C_WHITE = HexColor("#f5f5f4")
+
+SEV_COLORS = {
+    "critical": C_DANGER,
+    "high": HexColor("#fdab43"),
+    "medium": C_WARNING,
+    "low": C_SUCCESS,
+}
+
+CAT_COLORS = [
+    HexColor("#4f98a3"),
+    HexColor("#5591c7"),
+    HexColor("#e8af34"),
+    HexColor("#a86fdf"),
+    HexColor("#dd6974"),
+    HexColor("#6daa45"),
+    HexColor("#fdab43"),
+    HexColor("#797876"),
+]
+
+CATEGORY_ACTION_TEMPLATES = {
+    "code_quality": "Refactor {file} — reduce cyclomatic complexity and improve maintainability",
+    "architecture": "Restructure {file} — address architectural coupling and improve modularity",
+    "security": "Remediate {file} — fix {severity}-severity security vulnerability",
+    "documentation": "Document {file} — add missing docstrings and API documentation",
+    "test_debt": "Improve test coverage in {file} — add unit and integration tests",
+    "reliability": "Harden {file} — add error handling and improve fault tolerance",
+    "performance": "Optimize {file} — address performance bottleneck",
+    "dependency": "Update dependencies in {file} — resolve outdated or vulnerable packages",
+}
 
 
-class TechDebtPDFGenerator:
-    """Generates a professional executive PDF report from a Tech Debt analysis."""
+def clean_file_path(raw_path: str) -> str:
+    """Strip temp/OS paths and return a clean relative path."""
+    if not raw_path:
+        return "unknown"
+    path = re.sub(r"^[A-Za-z]:\\.*?\\tech-debt-repos\\[^\\]+\\", "", raw_path)
+    path = re.sub(r"^/tmp/repos/[^/]+/", "", path)
+    path = re.sub(r":\??$|:\d+$", "", path)
+    path = path.replace("\\", "/")
+    if len(path) > 60:
+        parts = path.split("/")
+        while len("/".join(parts)) > 57 and len(parts) > 1:
+            parts = parts[1:]
+        path = "…/" + "/".join(parts)
+    return path or "unknown"
 
-    def __init__(self) -> None:
-        self.styles = getSampleStyleSheet()
-        self._build_custom_styles()
 
-    def _build_custom_styles(self) -> None:
-        self.title_style = ParagraphStyle(
-            'TDTitle', parent=self.styles['Title'],
-            fontSize=28, textColor=WHITE, spaceAfter=6,
-            fontName='Helvetica-Bold', alignment=TA_LEFT,
+def item_hours(item: dict[str, Any]) -> float:
+    """Return rounded debt item hours using adjusted minutes first."""
+    minutes = item.get("adjusted_minutes") or item.get("base_minutes") or 0
+    hours = item.get("hours") or item.get("remediation_hours") or 0
+    if minutes:
+        try:
+            return round(float(minutes) / 60, 1)
+        except (TypeError, ValueError):
+            return 0.0
+    try:
+        return round(float(hours), 1)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def build_action_description(action: dict[str, Any]) -> str:
+    """Create a specific action description from category and file context."""
+    category = str(action.get("category") or "code_quality").lower()
+    file_path = clean_file_path(
+        str(action.get("file") or action.get("file_or_module") or "")
+    )
+    severity = str(action.get("severity") or "medium").lower()
+    template = CATEGORY_ACTION_TEMPLATES.get(category, "Address tech debt in {file}")
+    return template.format(file=file_path, severity=severity)
+
+
+def score_color(score: float) -> HexColor:
+    """Return a severity color for the debt score."""
+    if score <= 3:
+        return C_SUCCESS
+    if score <= 6:
+        return C_WARNING
+    return C_DANGER
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value) if value is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value) if value is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _merged_payload(result: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Return merged result and analysis payloads for report generation."""
+    analysis = result.get("raw_analysis") or result
+    if not isinstance(analysis, dict):
+        analysis = {}
+
+    merged_analysis = {
+        **analysis,
+        "executive_summary": analysis.get("executive_summary")
+        or result.get("executive_summary")
+        or "",
+        "priority_actions": analysis.get("priority_actions")
+        or result.get("priority_actions")
+        or [],
+        "roi_analysis": analysis.get("roi_analysis") or result.get("roi_analysis") or {},
+        "repo_profile": analysis.get("repo_profile") or result.get("repo_profile") or {},
+    }
+    merged_result = {**result, "raw_analysis": merged_analysis}
+    return merged_result, merged_analysis
+
+
+def _profile_value(
+    profile: dict[str, Any],
+    analysis: dict[str, Any],
+    *keys: str,
+    default: Any = None,
+) -> Any:
+    """Resolve a value from profile, nested profile sections, then analysis."""
+    for key in keys:
+        if key in profile and profile.get(key) is not None:
+            return profile.get(key)
+    for section in ("tech_stack", "team", "multipliers", "ai_detection"):
+        section_data = profile.get(section)
+        if isinstance(section_data, dict):
+            for key in keys:
+                if section_data.get(key) is not None:
+                    return section_data.get(key)
+    for key in keys:
+        if analysis.get(key) is not None:
+            return analysis.get(key)
+    return default
+
+
+def _fallback_priority_actions(analysis: dict[str, Any]) -> list[dict[str, Any]]:
+    """Build concrete priority actions when the report payload lacks them."""
+    findings = analysis.get("findings")
+    debt_items = analysis.get("debt_items")
+    source_items = findings if isinstance(findings, list) and findings else debt_items
+    if not isinstance(source_items, list):
+        return []
+
+    actions: list[dict[str, Any]] = []
+    for index, item in enumerate(source_items[:5], start=1):
+        if not isinstance(item, dict):
+            continue
+        actions.append(
+            {
+                "title": item.get("title")
+                or f"Address {str(item.get('category') or 'tech debt').replace('_', ' ')}",
+                "file": item.get("file_path") or item.get("file"),
+                "file_or_module": item.get("module") or item.get("file_path") or item.get("file"),
+                "severity": item.get("severity") or "medium",
+                "category": item.get("category") or "code_quality",
+                "estimated_cost": _safe_float(item.get("cost_usd")),
+                "estimated_hours": _safe_float(item.get("effort_hours"), item_hours(item)),
+                "monthly_savings": round(_safe_float(item.get("cost_usd")) * 0.015, 2),
+                "sprint_number": index,
+            }
         )
-        self.subtitle_style = ParagraphStyle(
-            'TDSubtitle', parent=self.styles['Normal'],
-            fontSize=12, textColor=LIGHT_GRAY, spaceAfter=4,
-            fontName='Helvetica',
+    return actions
+
+
+class ColorRect(Flowable):
+    """Full-width colored rectangle used behind the cover header."""
+
+    def __init__(self, height: float, color: HexColor, width: float | None = None):
+        super().__init__()
+        self.rect_height = height
+        self.color = color
+        self._width = width
+
+    def draw(self) -> None:
+        width = self._width or self.canv._pagesize[0]
+        self.canv.setFillColor(self.color)
+        self.canv.rect(0, 0, width, self.rect_height, fill=1, stroke=0)
+
+    def wrap(self, available_width: float, available_height: float) -> tuple[float, float]:
+        self._width = available_width
+        return available_width, self.rect_height
+
+
+def generate_pdf_report(result: dict[str, Any]) -> bytes:
+    """Generate a professional dark-theme PDF report and return raw bytes."""
+    result, analysis = _merged_payload(result)
+    buffer = BytesIO()
+
+    repo_url = (
+        result.get("github_url")
+        or analysis.get("github_url")
+        or analysis.get("repo_path")
+        or "Unknown Repository"
+    )
+    repo_name = repo_url.split("/")[-1] if "/" in str(repo_url) else str(repo_url)
+    generated = datetime.now().strftime("%B %d, %Y at %H:%M")
+
+    score = _safe_float(analysis.get("debt_score"))
+    cost = _safe_float(analysis.get("total_cost_usd"))
+    hours = _safe_float(analysis.get("total_remediation_hours"))
+    sprints = _safe_float(analysis.get("total_remediation_sprints"))
+    score_fill = score_color(score)
+
+    page_width, page_height = A4
+    margin = 18 * mm
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=margin,
+        rightMargin=margin,
+        topMargin=12 * mm,
+        bottomMargin=12 * mm,
+        title=f"Tech Debt Report - {repo_name}",
+        author="Tech Debt Quantifier",
+    )
+
+    styles = getSampleStyleSheet()
+
+    def S(name: str, parent: str = "Normal", **kwargs: Any) -> ParagraphStyle:
+        return ParagraphStyle(name, parent=styles[parent], **kwargs)
+
+    s_h1 = S(
+        "H1",
+        fontSize=22,
+        textColor=C_WHITE,
+        fontName="Helvetica-Bold",
+        spaceAfter=4,
+        leading=26,
+    )
+    s_h2 = S(
+        "H2",
+        fontSize=13,
+        textColor=C_WHITE,
+        fontName="Helvetica-Bold",
+        spaceBefore=16,
+        spaceAfter=6,
+        leading=17,
+    )
+    s_body = S("Body", fontSize=9, textColor=C_TEXT, leading=14, spaceAfter=4)
+    s_muted = S("Muted", fontSize=8, textColor=C_MUTED, leading=12)
+    s_label = S(
+        "Label",
+        fontSize=7,
+        textColor=C_MUTED,
+        fontName="Helvetica-Bold",
+        leading=10,
+        spaceAfter=1,
+    )
+    s_center = S("Center", fontSize=9, textColor=C_TEXT, alignment=TA_CENTER, leading=13)
+    s_mono = S("Mono", fontSize=8, textColor=C_TEXT, fontName="Courier", leading=12)
+    s_mono_muted = S(
+        "MonoMuted", fontSize=7, textColor=C_MUTED, fontName="Courier", leading=11
+    )
+
+    story: list[Any] = []
+
+    story.append(ColorRect(52 * mm, C_BG))
+    story.append(Spacer(1, -52 * mm))
+    story.append(Spacer(1, 8 * mm))
+    story.append(Paragraph("Tech Debt Quantifier", s_h1))
+    story.append(
+        Paragraph(
+            "<font color='#797876'>Technical Debt Analysis Report</font>",
+            S("Sub", fontSize=11, textColor=C_MUTED, leading=15),
         )
-        self.section_header_style = ParagraphStyle(
-            'TDSectionHeader', parent=self.styles['Heading1'],
-            fontSize=14, textColor=PURPLE, spaceBefore=16,
-            spaceAfter=8, fontName='Helvetica-Bold',
+    )
+    story.append(Spacer(1, 3 * mm))
+    story.append(
+        Paragraph(
+            f"<font color='#4f98a3'>●</font>  <font color='#797876'>{repo_url}</font>",
+            S("Repo", fontSize=8, textColor=C_MUTED, leading=12),
         )
-        self.body_style = ParagraphStyle(
-            'TDBody', parent=self.styles['Normal'],
-            fontSize=10, textColor=HexColor('#d1d5db'),
-            spaceAfter=6, fontName='Helvetica', leading=16,
+    )
+    story.append(
+        Paragraph(
+            f"<font color='#797876'>Generated: {generated}</font>",
+            S("Gen", fontSize=8, textColor=C_MUTED, leading=12),
         )
-        self.metric_label_style = ParagraphStyle(
-            'TDMetricLabel', parent=self.styles['Normal'],
-            fontSize=9, textColor=LIGHT_GRAY,
-            fontName='Helvetica', alignment=TA_CENTER,
-        )
-        self.metric_value_style = ParagraphStyle(
-            'TDMetricValue', parent=self.styles['Normal'],
-            fontSize=20, textColor=WHITE,
-            fontName='Helvetica-Bold', alignment=TA_CENTER,
-        )
-        self.small_style = ParagraphStyle(
-            'TDSmall', parent=self.styles['Normal'],
-            fontSize=8, textColor=LIGHT_GRAY,
-            fontName='Helvetica',
-        )
+    )
+    story.append(Spacer(1, 6 * mm))
 
-    def generate(self, analysis: dict, agent_state: dict) -> bytes:
-        """Generate PDF and return as bytes."""
-        buffer = io.BytesIO()
-
-        doc = SimpleDocTemplate(
-            buffer, pagesize=letter,
-            rightMargin=0.6 * inch, leftMargin=0.6 * inch,
-            topMargin=0.6 * inch, bottomMargin=0.6 * inch,
-        )
-
-        story = []
-        story += self._build_cover(analysis, agent_state)
-        story += self._build_executive_summary(agent_state)
-        story += self._build_metrics_section(analysis)
-        story += self._build_cost_breakdown(analysis)
-        story += self._build_priority_actions(agent_state)
-        story += self._build_roi_section(agent_state)
-        story += self._build_repo_profile(analysis)
-        story += self._build_top_debt_items(analysis)
-        story += self._build_footer_section(analysis)
-
-        doc.build(
-            story,
-            onFirstPage=self._draw_page_background,
-            onLaterPages=self._draw_page_background,
-        )
-
-        buffer.seek(0)
-        return buffer.read()
-
-    def _draw_page_background(self, canvas: object, doc: object) -> None:
-        """Draw dark background on every page."""
-        canvas.saveState()
-        canvas.setFillColor(CARD_BG)
-        canvas.rect(0, 0, letter[0], letter[1], fill=1, stroke=0)
-        canvas.setFillColor(PURPLE)
-        canvas.rect(0, letter[1] - 6, letter[0], 6, fill=1, stroke=0)
-        canvas.setFillColor(LIGHT_GRAY)
-        canvas.setFont('Helvetica', 8)
-        canvas.drawRightString(letter[0] - 0.6 * inch, 0.3 * inch, f"Page {doc.page}")
-        canvas.restoreState()
-
-    def _build_cover(self, analysis: dict, agent_state: dict) -> list:
-        story = []
-        story.append(Spacer(1, 0.3 * inch))
-        story.append(Paragraph("Tech Debt Quantifier", self.title_style))
-        story.append(Paragraph("Technical Debt Analysis Report", self.subtitle_style))
-
-        repo_url = analysis.get('repo_path') or agent_state.get('github_url', 'Unknown')
-        story.append(Paragraph(f"Repository: <b>{repo_url}</b>", self.body_style))
-        story.append(Paragraph(
-            f"Generated: {datetime.now().strftime('%B %d, %Y at %H:%M')}",
-            self.small_style
-        ))
-        story.append(Spacer(1, 0.2 * inch))
-        story.append(HRFlowable(width="100%", thickness=1, color=PURPLE, spaceAfter=12))
-
-        score = analysis.get('debt_score', 0)
-        total = analysis.get('total_cost_usd', 0)
-        hours = analysis.get('total_remediation_hours', 0)
-        sprints = analysis.get('total_remediation_sprints', 0)
-
-        score_color = '#10b981' if score <= 3 else '#f59e0b' if score <= 6 else '#ef4444'
-
-        hero_data = [
+    score_hex = score_fill.hexval()[2:]
+    kpi_col_width = (page_width - 2 * margin) / 4
+    kpi_table = Table(
+        [
             [
-                Paragraph("DEBT SCORE", self.metric_label_style),
-                Paragraph("TOTAL COST", self.metric_label_style),
-                Paragraph("REMEDIATION", self.metric_label_style),
-                Paragraph("SPRINTS", self.metric_label_style),
-            ],
-            [
-                Paragraph(f'<font color="{score_color}">{score:.1f}/10</font>', self.metric_value_style),
-                Paragraph(f'${total:,.0f}', self.metric_value_style),
-                Paragraph(f'{hours:.0f} hrs', self.metric_value_style),
-                Paragraph(f'{sprints:.1f}', self.metric_value_style),
-            ],
-        ]
-
-        hero_table = Table(hero_data, colWidths=[1.8 * inch] * 4)
-        hero_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), DARK_BG),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('TOPPADDING', (0, 0), (-1, -1), 14),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 14),
-            ('LINEAFTER', (0, 0), (2, -1), 0.5, HexColor('#374151')),
-        ]))
-        story.append(hero_table)
-        story.append(Spacer(1, 0.15 * inch))
-        return story
-
-    def _build_executive_summary(self, agent_state: dict) -> list:
-        summary = agent_state.get('executive_summary')
-        if not summary:
-            return []
-
-        story = []
-        story.append(Paragraph("Executive Summary", self.section_header_style))
-
-        summary_data = [[Paragraph(summary, self.body_style)]]
-        summary_table = Table(summary_data, colWidths=[7.3 * inch])
-        summary_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), DARK_BG),
-            ('TOPPADDING', (0, 0), (-1, -1), 12),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
-            ('LEFTPADDING', (0, 0), (-1, -1), 14),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 14),
-            ('LINEBEFORE', (0, 0), (0, -1), 3, PURPLE),
-        ]))
-        story.append(summary_table)
-        return story
-
-    def _build_cost_breakdown(self, analysis: dict) -> list:
-        categories = analysis.get('cost_by_category', {})
-        if not categories:
-            return []
-
-        story = []
-        story.append(Paragraph("Cost by Category", self.section_header_style))
-
-        total = analysis.get('total_cost_usd', 1)
-
-        rows = [[
-            Paragraph('<b>Category</b>', self.body_style),
-            Paragraph('<b>Cost</b>', self.body_style),
-            Paragraph('<b>Hours</b>', self.body_style),
-            Paragraph('<b>Issues</b>', self.body_style),
-            Paragraph('<b>% of Total</b>', self.body_style),
-        ]]
-
-        cat_colors = {
-            'code_quality': '#8b5cf6', 'security': '#ef4444',
-            'documentation': '#3b82f6', 'dependency': '#f59e0b',
-            'test_debt': '#10b981',
-        }
-
-        for cat, data in sorted(
-            categories.items(),
-            key=lambda x: x[1].get('cost_usd', 0) if isinstance(x[1], dict) else 0,
-            reverse=True
-        ):
-            if not isinstance(data, dict):
-                continue
-            cost = data.get('cost_usd', 0)
-            hours = data.get('hours', 0)
-            items = data.get('item_count', 0)
-            pct = (cost / total * 100) if total else 0
-            color = cat_colors.get(cat, '#6b7280')
-            label = cat.replace('_', ' ').title()
-
-            rows.append([
-                Paragraph(f'<font color="{color}">■</font> {label}', self.body_style),
-                Paragraph(f'${cost:,.0f}', self.body_style),
-                Paragraph(f'{hours:.1f}h', self.body_style),
-                Paragraph(str(items), self.body_style),
-                Paragraph(f'{pct:.1f}%', self.body_style),
-            ])
-
-        cat_table = Table(rows, colWidths=[2.4*inch, 1.3*inch, 1.0*inch, 0.9*inch, 1.4*inch])
-        cat_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), DARK_PURPLE),
-            ('BACKGROUND', (0, 1), (-1, -1), DARK_BG),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [DARK_BG, HexColor('#1a2435')]),
-            ('TOPPADDING', (0, 0), (-1, -1), 8),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-            ('LEFTPADDING', (0, 0), (-1, -1), 10),
-            ('LINEBELOW', (0, 0), (-1, 0), 0.5, PURPLE),
-        ]))
-        story.append(cat_table)
-        return story
-
-    def _build_metrics_section(self, analysis: dict) -> list:
-        story = []
-        story.append(Paragraph("Key Metrics", self.section_header_style))
-
-        sanity = analysis.get('sanity_check', {})
-        rates = analysis.get('hourly_rates', {})
-        profile = analysis.get('repo_profile', {})
-        team = profile.get('team', {}) if profile else {}
-        mults = profile.get('multipliers', {}) if profile else {}
-
-        raw_rows = [
-            ['Metric', 'Value', 'Source'],
-            ['Hourly Rate Used',
-             f"${rates.get('blended_rate', 84.55):.2f}/hr",
-             f"Confidence: {rates.get('confidence', 'N/A')}"],
-            ['Cost per Function',
-             f"${sanity.get('your_cost_per_function', 0):,.0f}",
-             'Industry avg: $1,083/fn'],
-            ['Variance vs Industry',
-             f"{sanity.get('variance_pct', 0):+.1f}%",
-             sanity.get('assessment', '')],
-            ['Combined Multiplier',
-             f"{mults.get('combined_multiplier', 1.0):.2f}x",
-             'Bus factor x age x team'],
-            ['Team Size',
-             str(team.get('estimated_team_size', '?')),
-             'From git history'],
-            ['Bus Factor',
-             str(team.get('bus_factor', '?')),
-             '1 = high risk'],
-            ['Repo Age',
-             f"{team.get('repo_age_days', 0) // 365} years",
-             f"{team.get('repo_age_days', 0)} days"],
-        ]
-
-        styled_rows = []
-        for i, row in enumerate(raw_rows):
-            if i == 0:
-                styled_rows.append([
-                    Paragraph(f'<b>{row[0]}</b>', self.body_style),
-                    Paragraph(f'<b>{row[1]}</b>', self.body_style),
-                    Paragraph(f'<b>{row[2]}</b>', self.small_style),
-                ])
-            else:
-                styled_rows.append([
-                    Paragraph(row[0], self.body_style),
-                    Paragraph(row[1], self.body_style),
-                    Paragraph(row[2], self.small_style),
-                ])
-
-        metrics_table = Table(styled_rows, colWidths=[2.4*inch, 1.8*inch, 3.1*inch])
-        metrics_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), DARK_PURPLE),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [DARK_BG, HexColor('#1a2435')]),
-            ('TOPPADDING', (0, 0), (-1, -1), 7),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
-            ('LEFTPADDING', (0, 0), (-1, -1), 10),
-            ('LINEBELOW', (0, 0), (-1, 0), 0.5, PURPLE),
-        ]))
-        story.append(metrics_table)
-        return story
-
-    def _build_priority_actions(self, agent_state: dict) -> list:
-        actions = agent_state.get('priority_actions', [])
-        if not actions:
-            return []
-
-        story = []
-        story.append(Paragraph("Top Priority Actions", self.section_header_style))
-
-        rank_colors = ['#ef4444', '#f59e0b', '#3b82f6']
-        rank_labels = ['Fix First', 'Fix Second', 'Fix Third']
-
-        for i, action in enumerate(actions[:3]):
-            if 'error' in action:
-                continue
-            color = rank_colors[i] if i < 3 else '#6b7280'
-            label = rank_labels[i] if i < 3 else f'#{i+1}'
-
-            action_data = [
-                [
-                    Paragraph(
-                        f'<font color="{color}">●</font> '
-                        f'<b>{label}</b> — {action.get("title", "")}',
-                        self.body_style
-                    ),
-                    Paragraph(action.get('sprint', ''), self.small_style),
-                ],
-                [
-                    Paragraph(f'File: {action.get("file_or_module", "")}', self.small_style),
-                    Paragraph('', self.small_style),
-                ],
-                [
-                    Paragraph(action.get('why', ''), self.body_style),
-                    Paragraph('', self.small_style),
-                ],
-                [
-                    Paragraph(
-                        f'Fix Cost: <b>${action.get("estimated_cost", 0):,.0f}</b>'
-                        f' ({action.get("estimated_hours", 0)}h)   '
-                        f'Saves: <b>${action.get("saves_per_month", 0):,.0f}/mo</b>',
-                        self.body_style
-                    ),
-                    Paragraph('', self.small_style),
-                ],
-            ]
-
-            action_table = Table(action_data, colWidths=[5.8*inch, 1.5*inch])
-            action_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, -1), DARK_BG),
-                ('TOPPADDING', (0, 0), (-1, -1), 8),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-                ('LEFTPADDING', (0, 0), (-1, -1), 12),
-                ('LINEBEFORE', (0, 0), (0, -1), 3, HexColor(color)),
-            ]))
-            story.append(action_table)
-            story.append(Spacer(1, 0.08 * inch))
-
-        return story
-
-    def _build_roi_section(self, agent_state: dict) -> list:
-        roi = agent_state.get('roi_analysis', {})
-        if not roi or roi.get('annual_maintenance_savings', 0) == 0:
-            return []
-
-        story = []
-        story.append(Paragraph("ROI Analysis", self.section_header_style))
-
-        roi_data = [
-            [
-                Paragraph("Annual Savings", self.metric_label_style),
-                Paragraph("Payback Period", self.metric_label_style),
-                Paragraph("3-Year ROI", self.metric_label_style),
-                Paragraph("Quarterly Budget", self.metric_label_style),
+                Paragraph("DEBT SCORE", s_label),
+                Paragraph("TOTAL COST", s_label),
+                Paragraph("HOURS", s_label),
+                Paragraph("SPRINTS", s_label),
             ],
             [
                 Paragraph(
-                    f'<font color="#10b981">${roi.get("annual_maintenance_savings", 0):,.0f}</font>',
-                    self.metric_value_style
+                    f"<font color='#{score_hex}'>{score:.1f}<font size='12'>/10</font></font>",
+                    S(
+                        "ScoreValue",
+                        fontSize=28,
+                        fontName="Helvetica-Bold",
+                        textColor=score_fill,
+                        leading=32,
+                    ),
                 ),
-                Paragraph(f'{roi.get("payback_months", 0)} mo', self.metric_value_style),
-                Paragraph(f'{roi.get("3_year_roi_pct", 0)}%', self.metric_value_style),
-                Paragraph(f'${roi.get("recommended_budget", 0):,.0f}', self.metric_value_style),
+                Paragraph(
+                    f"${cost:,.0f}",
+                    S(
+                        "KpiValue",
+                        fontSize=22,
+                        fontName="Helvetica-Bold",
+                        textColor=C_WHITE,
+                        leading=26,
+                    ),
+                ),
+                Paragraph(
+                    f"{hours:,.0f}",
+                    S(
+                        "KpiValueHours",
+                        fontSize=22,
+                        fontName="Helvetica-Bold",
+                        textColor=C_WHITE,
+                        leading=26,
+                    ),
+                ),
+                Paragraph(
+                    f"{sprints:.1f}",
+                    S(
+                        "KpiValueSprints",
+                        fontSize=22,
+                        fontName="Helvetica-Bold",
+                        textColor=C_WHITE,
+                        leading=26,
+                    ),
+                ),
             ],
+        ],
+        colWidths=[kpi_col_width] * 4,
+        rowHeights=[10 * mm, 14 * mm],
+    )
+    kpi_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), C_SURFACE),
+                ("BOX", (0, 0), (-1, -1), 0.5, C_BORDER),
+                ("LINEAFTER", (0, 0), (2, -1), 0.5, C_BORDER),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ]
+        )
+    )
+    story.append(kpi_table)
+    story.append(Spacer(1, 6 * mm))
+
+    story.append(Paragraph("Executive Summary", s_h2))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=C_BORDER, spaceAfter=4))
+    summary = str(
+        analysis.get("executive_summary")
+        or result.get("executive_summary")
+        or (
+            f"This repository carries an estimated ${cost:,.0f} in technical debt with "
+            f"a score of {score:.1f}/10 and approximately {hours:,.0f} remediation hours."
+        )
+    )
+    story.append(Paragraph(summary, s_body))
+    story.append(Spacer(1, 5 * mm))
+
+    story.append(Paragraph("Key Metrics", s_h2))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=C_BORDER, spaceAfter=4))
+
+    profile = analysis.get("repo_profile") if isinstance(analysis.get("repo_profile"), dict) else {}
+    roi = result.get("roi_analysis") if isinstance(result.get("roi_analysis"), dict) else {}
+    if not roi:
+        roi = analysis.get("roi_analysis") if isinstance(analysis.get("roi_analysis"), dict) else {}
+
+    hourly_rate = (
+        _safe_float(analysis.get("hourly_rate"))
+        or _safe_float((analysis.get("hourly_rates") or {}).get("blended_rate"))
+    )
+    combined_multiplier = _safe_float(analysis.get("combined_multiplier"))
+    if not combined_multiplier:
+        combined_multiplier = _safe_float(_profile_value(profile, analysis, "combined_multiplier", default=1.0), 1.0)
+
+    total_issues = _safe_int(analysis.get("total_issues"))
+    if not total_issues:
+        findings = analysis.get("findings")
+        debt_items = analysis.get("debt_items")
+        if isinstance(findings, list) and findings:
+            total_issues = len(findings)
+        elif isinstance(debt_items, list):
+            total_issues = len(debt_items)
+        else:
+            categories = analysis.get("cost_by_category") or {}
+            if isinstance(categories, dict):
+                total_issues = sum(
+                    _safe_int(v.get("count") or v.get("item_count"))
+                    for v in categories.values()
+                    if isinstance(v, dict)
+                )
+
+    metrics_rows = [
+        ["Metric", "Value", "Note"],
+        ["Hourly Rate", f"${hourly_rate:,.2f}/hr", "Blended engineer rate"],
+        [
+            "Combined Multiplier",
+            f"{combined_multiplier:.2f}x",
+            "Bus factor x repo age x team risk",
+        ],
+        [
+            "Team Size",
+            str(_safe_int(_profile_value(profile, analysis, "team_size", "estimated_team_size", default=1))),
+            "From git history",
+        ],
+        [
+            "Bus Factor",
+            str(_safe_int(_profile_value(profile, analysis, "bus_factor", default=1))),
+            "1 = single point of failure",
+        ],
+        [
+            "Files Analyzed",
+            str(
+                _safe_int(
+                    (analysis.get("summary") or {}).get("files_scanned")
+                    or analysis.get("files_analyzed")
+                )
+            ),
+            "Source files scanned",
+        ],
+        ["Total Issues", str(total_issues), "Across all categories"],
+    ]
+
+    content_width = page_width - 2 * margin
+    metrics_table = Table(
+        metrics_rows,
+        colWidths=[content_width * 0.38, content_width * 0.22, content_width * 0.40],
+    )
+    metrics_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), C_PRIMARY),
+                ("TEXTCOLOR", (0, 0), (-1, 0), C_WHITE),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, 0), 8),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [C_SURFACE, HexColor("#201f1d")]),
+                ("TEXTCOLOR", (0, 1), (-1, -1), C_TEXT),
+                ("FONTSIZE", (0, 1), (-1, -1), 8),
+                ("FONTNAME", (1, 1), (1, -1), "Helvetica-Bold"),
+                ("TEXTCOLOR", (1, 1), (1, -1), C_WHITE),
+                ("GRID", (0, 0), (-1, -1), 0.3, C_BORDER),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ]
+        )
+    )
+    story.append(metrics_table)
+
+    story.append(PageBreak())
+    story.append(Paragraph("Cost by Category", s_h2))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=C_BORDER, spaceAfter=6))
+
+    categories = analysis.get("cost_by_category") or {}
+    category_items: list[tuple[str, dict[str, Any]]] = []
+    if isinstance(categories, dict):
+        for key, value in categories.items():
+            if isinstance(value, dict):
+                category_items.append((key, value))
+            elif isinstance(value, (int, float)):
+                category_items.append((key, {"cost_usd": value, "count": 0, "hours": 0}))
+    category_items.sort(key=lambda item: _safe_float(item[1].get("cost_usd")), reverse=True)
+
+    total_category_cost = sum(_safe_float(value.get("cost_usd")) for _, value in category_items) or 1.0
+    category_rows: list[list[Any]] = [["", "Category", "Cost", "Hours", "Issues", "% of Total"]]
+    for index, (key, value) in enumerate(category_items):
+        category_cost = _safe_float(value.get("cost_usd"))
+        category_hours = _safe_float(value.get("hours") or value.get("total_hours"))
+        category_count = _safe_int(value.get("count") or value.get("item_count") or value.get("issues"))
+        pct = category_cost / total_category_cost * 100
+        color = CAT_COLORS[index % len(CAT_COLORS)]
+        category_rows.append(
+            [
+                Paragraph(f"<font color='#{color.hexval()[2:]}'>■</font>", s_center),
+                Paragraph(key.replace("_", " ").title(), s_body),
+                Paragraph(
+                    f"${category_cost:,.0f}",
+                    S("CatCost", fontSize=9, fontName="Helvetica-Bold", textColor=C_WHITE, leading=12),
+                ),
+                Paragraph(f"{category_hours:.1f}h", s_mono_muted),
+                Paragraph(str(category_count), s_mono_muted),
+                Paragraph(f"{pct:.1f}%", s_muted),
+            ]
+        )
+
+    category_table = Table(
+        category_rows,
+        colWidths=[
+            content_width * 0.05,
+            content_width * 0.30,
+            content_width * 0.18,
+            content_width * 0.15,
+            content_width * 0.12,
+            content_width * 0.20,
+        ],
+    )
+    category_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), C_PRIMARY),
+                ("TEXTCOLOR", (0, 0), (-1, 0), C_WHITE),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, 0), 8),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [C_SURFACE, HexColor("#201f1d")]),
+                ("GRID", (0, 0), (-1, -1), 0.3, C_BORDER),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ]
+        )
+    )
+    story.append(category_table)
+    story.append(Spacer(1, 8 * mm))
+
+    story.append(Paragraph("Top Priority Actions", s_h2))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=C_BORDER, spaceAfter=6))
+
+    actions = result.get("priority_actions")
+    if not isinstance(actions, list) or not actions:
+        actions = analysis.get("priority_actions")
+    if not isinstance(actions, list) or not actions:
+        actions = _fallback_priority_actions(analysis)
+
+    sprint_labels = ["Fix First", "Fix Second", "Fix Third", "Sprint 4", "Sprint 5"]
+    for index, action in enumerate(actions[:5]):
+        if not isinstance(action, dict):
+            continue
+        severity = str(action.get("severity") or "medium").lower()
+        severity_fill = SEV_COLORS.get(severity, C_MUTED)
+        label = sprint_labels[index] if index < len(sprint_labels) else f"Sprint {index + 1}"
+        sprint = action.get("sprint_number") or action.get("sprint") or index + 1
+        action_cost = _safe_float(action.get("estimated_cost") or action.get("fix_cost"))
+        action_hours = _safe_float(action.get("estimated_hours"), item_hours(action))
+        action_savings = _safe_float(action.get("monthly_savings") or action.get("saves_per_month"))
+        description = build_action_description(action)
+        file_label = clean_file_path(
+            str(action.get("file") or action.get("file_or_module") or "")
+        )
+
+        metric_table = Table(
+            [
+                [Paragraph("Fix Cost", s_label), Paragraph("Hours", s_label), Paragraph("Monthly Savings", s_label)],
+                [
+                    Paragraph(
+                        f"${action_cost:,.0f}",
+                        S("ActionMetricValue", fontSize=10, fontName="Helvetica-Bold", textColor=C_WHITE, leading=13),
+                    ),
+                    Paragraph(
+                        f"{action_hours:.1f}h",
+                        S("ActionMetricHours", fontSize=10, fontName="Helvetica-Bold", textColor=C_WHITE, leading=13),
+                    ),
+                    Paragraph(
+                        f"${action_savings:,.0f}/mo" if action_savings > 0 else "—",
+                        S(
+                            "ActionMetricSavings",
+                            fontSize=10,
+                            fontName="Helvetica-Bold",
+                            textColor=C_SUCCESS if action_savings > 0 else C_MUTED,
+                            leading=13,
+                        ),
+                    ),
+                ],
+            ],
+            colWidths=[(content_width - 20) * 0.33] * 3,
+        )
+        metric_table.setStyle(
+            TableStyle(
+                [
+                    ("TOPPADDING", (0, 0), (-1, -1), 3),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ]
+            )
+        )
+
+        action_table = Table(
+            [
+                [
+                    Paragraph(
+                        f"<font color='#{severity_fill.hexval()[2:]}'>● {label.upper()}</font>  "
+                        f"<font color='#797876'>Sprint {sprint}</font>",
+                        S("ActionLabel", fontSize=8, fontName="Helvetica-Bold", textColor=C_WHITE, leading=11),
+                    ),
+                    Paragraph(
+                        f"${action_cost:,.0f}",
+                        S(
+                            "ActionCost",
+                            fontSize=11,
+                            fontName="Helvetica-Bold",
+                            textColor=C_WHITE,
+                            alignment=TA_RIGHT,
+                            leading=14,
+                        ),
+                    ),
+                ],
+                [Paragraph(description, s_body), ""],
+                [
+                    Paragraph(
+                        f"<font color='#4f98a3'>⬡</font> <font color='#797876' size='7'>{file_label}</font>",
+                        S("ActionFile", fontSize=7, fontName="Courier", textColor=C_MUTED, leading=10),
+                    ),
+                    "",
+                ],
+                [metric_table, ""],
+            ],
+            colWidths=[content_width - 12 * mm - 2, 12 * mm + 2],
+        )
+        action_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), C_SURFACE),
+                    ("BOX", (0, 0), (-1, -1), 0.5, C_BORDER),
+                    ("LINEABOVE", (0, 0), (-1, 0), 2.5, severity_fill),
+                    ("SPAN", (0, 1), (1, 1)),
+                    ("SPAN", (0, 2), (1, 2)),
+                    ("SPAN", (0, 3), (1, 3)),
+                    ("TOPPADDING", (0, 0), (-1, -1), 6),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+        story.append(KeepTogether([action_table, Spacer(1, 4 * mm)]))
+
+    story.append(PageBreak())
+    story.append(Paragraph("ROI Analysis", s_h2))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=C_BORDER, spaceAfter=6))
+
+    annual_savings = _safe_float(roi.get("annual_maintenance_savings"))
+    payback = _safe_int(roi.get("payback_months"))
+    roi_3yr = _safe_float(
+        roi.get("three_year_roi_pct", roi.get("3_year_roi_pct", roi.get("roi_percentage")))
+    )
+    quarterly_budget = _safe_float(
+        roi.get("quarterly_budget", roi.get("recommended_quarterly_spend", roi.get("recommended_budget")))
+    )
+
+    roi_table = Table(
+        [
+            ["Annual Savings", "Payback Period", "3-Year ROI", "Quarterly Budget"],
+            [
+                f"${annual_savings:,.0f}",
+                f"{payback} mo" if payback else "N/A",
+                f"{roi_3yr:.0f}%" if roi_3yr else "N/A",
+                f"${quarterly_budget:,.0f}" if quarterly_budget else "N/A",
+            ],
+        ],
+        colWidths=[content_width / 4] * 4,
+        rowHeights=[8 * mm, 14 * mm],
+    )
+    roi_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), C_SURFACE),
+                ("BACKGROUND", (0, 1), (-1, 1), HexColor("#201f1d")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), C_MUTED),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, 0), 7),
+                ("TEXTCOLOR", (0, 1), (-1, 1), C_SUCCESS),
+                ("FONTNAME", (0, 1), (-1, 1), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 1), (-1, 1), 16),
+                ("GRID", (0, 0), (-1, -1), 0.3, C_BORDER),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ]
+        )
+    )
+    story.append(roi_table)
+    story.append(Spacer(1, 6 * mm))
+
+    roi_recommendation = (
+        roi.get("recommendation")
+        or result.get("roi_recommendation")
+        or "Prioritize the top hotspots this sprint for the strongest maintenance ROI."
+    )
+    story.append(
+        Paragraph(
+            f"<font color='#4f98a3'>\"</font>{roi_recommendation}<font color='#4f98a3'>\"</font>",
+            S(
+                "Quote",
+                fontSize=9,
+                textColor=C_TEXT,
+                leftIndent=12,
+                leading=15,
+                spaceBefore=4,
+                spaceAfter=8,
+            ),
+        )
+    )
+
+    story.append(Paragraph("Repository Profile", s_h2))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=C_BORDER, spaceAfter=6))
+
+    frameworks = _profile_value(profile, analysis, "frameworks", default=[])
+    databases = _profile_value(profile, analysis, "databases", default=[])
+    ai_libraries = _profile_value(
+        profile, analysis, "ai_libraries", "ai_ml_libraries", default=[]
+    )
+    has_tests = bool(_profile_value(profile, analysis, "has_tests", default=False))
+    has_ci_cd = bool(_profile_value(profile, analysis, "has_ci_cd", "has_cicd", default=False))
+    repo_age_days = _safe_int(_profile_value(profile, analysis, "repo_age_days", default=0))
+    repo_age_str = (
+        str(_profile_value(profile, analysis, "repo_age_str"))
+        if _profile_value(profile, analysis, "repo_age_str") is not None
+        else (f"{repo_age_days // 365} years" if repo_age_days else "Unknown")
+    )
+
+    profile_rows = [
+        ["Primary Language", str(_profile_value(profile, analysis, "primary_language", default="Unknown")), "Has Tests", "Yes" if has_tests else "No"],
+        ["Frameworks", ", ".join(frameworks) if isinstance(frameworks, list) and frameworks else "None", "Has CI/CD", "Yes" if has_ci_cd else "No"],
+        ["Databases", ", ".join(databases) if isinstance(databases, list) and databases else "None", "AI Libraries", ", ".join(ai_libraries) if isinstance(ai_libraries, list) and ai_libraries else "None"],
+        ["Team Size", f"~{_safe_int(_profile_value(profile, analysis, 'team_size', 'estimated_team_size', default=1))} engineer(s)", "Bus Factor", str(_safe_int(_profile_value(profile, analysis, 'bus_factor', default=1)))],
+        ["Repo Age", repo_age_str, "Combined Multiplier", f"{combined_multiplier:.2f}x"],
+    ]
+
+    profile_table = Table(
+        [
+            [
+                Paragraph(str(cell), s_label if idx % 2 == 0 else s_body)
+                for idx, cell in enumerate(row)
+            ]
+            for row in profile_rows
+        ],
+        colWidths=[content_width / 4] * 4,
+    )
+    profile_table.setStyle(
+        TableStyle(
+            [
+                ("ROWBACKGROUNDS", (0, 0), (-1, -1), [C_SURFACE, HexColor("#201f1d")]),
+                ("GRID", (0, 0), (-1, -1), 0.3, C_BORDER),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ]
+        )
+    )
+    story.append(profile_table)
+
+    story.append(PageBreak())
+    story.append(Paragraph("Top 20 Debt Items", s_h2))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=C_BORDER, spaceAfter=6))
+
+    debt_items = analysis.get("debt_items") if isinstance(analysis.get("debt_items"), list) else []
+    debt_items = sorted(debt_items, key=lambda item: _safe_float(item.get("cost_usd")), reverse=True)[:20]
+    debt_rows: list[list[Any]] = [
+        [
+            Paragraph("<b>#</b>", s_muted),
+            Paragraph("<b>File</b>", s_muted),
+            Paragraph("<b>Category</b>", s_muted),
+            Paragraph("<b>Sev</b>", s_muted),
+            Paragraph("<b>Cost</b>", s_muted),
+            Paragraph("<b>Hours</b>", s_muted),
         ]
+    ]
+    for index, item in enumerate(debt_items, start=1):
+        severity = str(item.get("severity") or "medium").lower()
+        severity_fill = SEV_COLORS.get(severity, C_MUTED)
+        debt_rows.append(
+            [
+                Paragraph(str(index), s_muted),
+                Paragraph(clean_file_path(str(item.get("file") or "")), s_mono),
+                Paragraph(str(item.get("category") or "").replace("_", " ").title(), s_body),
+                Paragraph(
+                    f"<font color='#{severity_fill.hexval()[2:]}'>{severity[:3].upper()}</font>",
+                    S("DebtSeverity", fontSize=8, fontName="Helvetica-Bold", textColor=severity_fill, leading=11),
+                ),
+                Paragraph(
+                    f"${_safe_float(item.get('cost_usd')):,.0f}",
+                    S("DebtCost", fontSize=9, fontName="Helvetica-Bold", textColor=C_WHITE, leading=12),
+                ),
+                Paragraph(f"{item_hours(item):.1f}h", s_mono_muted),
+            ]
+        )
 
-        roi_table = Table(roi_data, colWidths=[1.8*inch] * 4)
-        roi_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), DARK_BG),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('TOPPADDING', (0, 0), (-1, -1), 14),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 14),
-            ('LINEAFTER', (0, 0), (2, -1), 0.5, HexColor('#374151')),
-        ]))
-        story.append(roi_table)
+    debt_table = Table(
+        debt_rows,
+        colWidths=[
+            content_width * 0.05,
+            content_width * 0.40,
+            content_width * 0.20,
+            content_width * 0.08,
+            content_width * 0.14,
+            content_width * 0.13,
+        ],
+    )
+    debt_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), C_PRIMARY),
+                ("TEXTCOLOR", (0, 0), (-1, 0), C_WHITE),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, 0), 8),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [C_SURFACE, HexColor("#201f1d")]),
+                ("GRID", (0, 0), (-1, -1), 0.3, C_BORDER),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ]
+        )
+    )
+    story.append(debt_table)
+    story.append(Spacer(1, 6 * mm))
 
-        rec = roi.get('recommendation', '')
-        if rec:
-            story.append(Spacer(1, 0.1*inch))
-            story.append(Paragraph(f'<i>"{rec}"</i>', self.body_style))
+    story.append(HRFlowable(width="100%", thickness=0.3, color=C_BORDER, spaceBefore=6))
+    data_sources = analysis.get("data_sources") or {}
+    source_parts = [str(repo_url), generated]
+    if isinstance(data_sources, dict) and data_sources:
+        source_parts.insert(0, "Data sources: " + " · ".join(f"{k}:{v}" for k, v in data_sources.items()))
+    else:
+        source_parts.insert(
+            0,
+            "Data sources: " + " · ".join(analysis.get("data_sources_used") or ["benchmarks:live", "hourly_rates:live"]),
+        )
+    story.append(
+        Paragraph(
+            "  ·  ".join(source_parts),
+            S("Footer", fontSize=7, textColor=C_MUTED, alignment=TA_CENTER, leading=10),
+        )
+    )
 
-        return story
+    def _page_bg(canvas: Any, doc_obj: Any) -> None:
+        canvas.saveState()
+        canvas.setFillColor(C_BG)
+        canvas.rect(0, 0, page_width, page_height, fill=1, stroke=0)
+        canvas.restoreState()
 
-    def _build_repo_profile(self, analysis: dict) -> list:
-        profile = analysis.get('repo_profile', {})
-        if not profile:
-            return []
+    doc.build(story, onFirstPage=_page_bg, onLaterPages=_page_bg)
+    return buffer.getvalue()
 
-        story = []
-        story.append(Paragraph("Repository Profile", self.section_header_style))
 
-        tech = profile.get('tech_stack', {})
-        team = profile.get('team', {})
-        mults = profile.get('multipliers', {})
+class TechDebtPDFGenerator:
+    """Compatibility wrapper for existing report generation callers."""
 
-        frameworks = ', '.join(tech.get('frameworks', [])) or 'N/A'
-        ai_libs = ', '.join(tech.get('ai_ml_libraries', [])) or 'None'
-        dbs = ', '.join(tech.get('databases', [])) or 'None'
-
-        profile_data = [
-            ['Primary Language', tech.get('primary_language', 'Unknown'),
-             'Has Tests', 'Yes' if tech.get('has_tests') else 'No'],
-            ['Frameworks', frameworks,
-             'Has CI/CD', 'Yes' if tech.get('has_ci_cd') else 'No'],
-            ['Databases', dbs,
-             'AI Libraries', ai_libs],
-            ['Team Size', f"~{team.get('estimated_team_size', '?')} engineers",
-             'Bus Factor', str(team.get('bus_factor', '?'))],
-            ['Repo Age', f"{(team.get('repo_age_days', 0) or 0) // 365} years",
-             'Combined Multiplier', f"{mults.get('combined_multiplier', 1.0):.2f}x"],
-        ]
-
-        styled = []
-        for row in profile_data:
-            styled.append([
-                Paragraph(row[0], self.small_style),
-                Paragraph(str(row[1]), self.body_style),
-                Paragraph(row[2], self.small_style),
-                Paragraph(str(row[3]), self.body_style),
-            ])
-
-        prof_table = Table(styled, colWidths=[1.5*inch, 2.1*inch, 1.5*inch, 2.2*inch])
-        prof_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), DARK_BG),
-            ('ROWBACKGROUNDS', (0, 0), (-1, -1), [DARK_BG, HexColor('#1a2435')]),
-            ('TOPPADDING', (0, 0), (-1, -1), 7),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
-            ('LEFTPADDING', (0, 0), (-1, -1), 10),
-            ('LINEAFTER', (1, 0), (1, -1), 0.5, HexColor('#374151')),
-        ]))
-        story.append(prof_table)
-        return story
-
-    def _build_top_debt_items(self, analysis: dict) -> list:
-        items = analysis.get('debt_items', [])
-        if not items:
-            return []
-
-        story = []
-        story.append(PageBreak())
-        story.append(Paragraph("Top 20 Debt Items", self.section_header_style))
-
-        top = sorted(items, key=lambda x: x.get('cost_usd', 0), reverse=True)[:20]
-
-        def clean_path(p: str) -> str:
-            if not p:
-                return 'unknown'
-            p = re.sub(r'^/tmp/repos/[^/]+/', '', str(p))
-            p = re.sub(r':\?$|:\d+$', '', p)
-            return p[:45] + '...' if len(p) > 45 else p
-
-        rows = [[
-            Paragraph('<b>#</b>', self.small_style),
-            Paragraph('<b>File</b>', self.small_style),
-            Paragraph('<b>Category</b>', self.small_style),
-            Paragraph('<b>Sev</b>', self.small_style),
-            Paragraph('<b>Cost</b>', self.small_style),
-            Paragraph('<b>Hours</b>', self.small_style),
-        ]]
-
-        sev_colors = {
-            'critical': '#ef4444', 'high': '#f59e0b',
-            'medium': '#3b82f6', 'low': '#6b7280',
+    def generate(self, analysis: dict[str, Any], agent_state: dict[str, Any]) -> bytes:
+        result = {
+            **agent_state,
+            "raw_analysis": analysis,
         }
-
-        for i, item in enumerate(top, 1):
-            sev = (item.get('severity') or 'low').lower()
-            color = sev_colors.get(sev, '#6b7280')
-            cost = item.get('cost_usd', 0)
-            hours = (item.get('adjusted_minutes', 0) or 0) / 60
-
-            rows.append([
-                Paragraph(str(i), self.small_style),
-                Paragraph(clean_path(item.get('file', '')), self.small_style),
-                Paragraph((item.get('category') or '').replace('_', ' ').title(), self.small_style),
-                Paragraph(f'<font color="{color}">{sev[:3].upper()}</font>', self.small_style),
-                Paragraph(f'${cost:,.0f}', self.small_style),
-                Paragraph(f'{hours:.1f}h', self.small_style),
-            ])
-
-        items_table = Table(rows, colWidths=[0.3*inch, 2.8*inch, 1.3*inch, 0.5*inch, 0.9*inch, 0.7*inch])
-        items_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), DARK_PURPLE),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [DARK_BG, HexColor('#1a2435')]),
-            ('TOPPADDING', (0, 0), (-1, -1), 5),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
-            ('LEFTPADDING', (0, 0), (-1, -1), 6),
-            ('LINEBELOW', (0, 0), (-1, 0), 0.5, PURPLE),
-        ]))
-        story.append(items_table)
-        return story
-
-    def _build_footer_section(self, analysis: dict) -> list:
-        story = []
-        story.append(Spacer(1, 0.2 * inch))
-        story.append(HRFlowable(width="100%", thickness=0.5, color=HexColor('#374151'), spaceAfter=10))
-
-        sources = analysis.get('data_sources_used', [])
-        sources_text = ' · '.join(sources) if sources else 'N/A'
-
-        story.append(Paragraph(
-            f'<font color="#6b7280">Data sources: {sources_text}'
-            f' · Generated by Tech Debt Quantifier</font>',
-            self.small_style
-        ))
-        return story
+        if not result.get("github_url"):
+            result["github_url"] = analysis.get("github_url") or analysis.get("repo_path")
+        return generate_pdf_report(result)

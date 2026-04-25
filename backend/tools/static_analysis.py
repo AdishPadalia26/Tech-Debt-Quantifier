@@ -31,6 +31,35 @@ from constants import (
 
 logger = logging.getLogger(__name__)
 
+MAX_FILES = 200
+MAX_FILE_SIZE_KB = 500
+HARD_SKIP_PATTERNS = [
+    ".git",
+    "node_modules",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "dist",
+    "build",
+    ".next",
+    "coverage",
+    ".pytest_cache",
+    ".min.js",
+    ".min.css",
+    ".lock",
+    "package-lock.json",
+    "yarn.lock",
+    ".svg",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".ico",
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".eot",
+]
+
 
 class StaticAnalyzer:
     """Analyzes code for technical debt using static analysis tools.
@@ -45,12 +74,21 @@ class StaticAnalyzer:
     def _should_skip_file(self, file_path: str) -> bool:
         """Check if file should be skipped based on patterns."""
         file_name = os.path.basename(file_path)
+        normalized_path = file_path.replace("\\", "/")
+        for pattern in HARD_SKIP_PATTERNS:
+            if pattern in file_name or pattern in normalized_path:
+                return True
         for pattern in SKIP_FILE_PATTERNS:
             if pattern.startswith("*"):
                 if file_name.endswith(pattern[1:]):
                     return True
             elif pattern in file_name:
                 return True
+        try:
+            if os.path.getsize(file_path) > MAX_FILE_SIZE_KB * 1024:
+                return True
+        except OSError:
+            return True
         return False
 
     def _should_skip_dir(self, dir_path: str) -> bool:
@@ -443,6 +481,10 @@ class StaticAnalyzer:
                 file_list.append(file_path)
 
         total_files = len(file_list)
+        if total_files > MAX_FILES:
+            logger.info("Limiting static analysis to first %s files out of %s", MAX_FILES, total_files)
+            file_list = file_list[:MAX_FILES]
+            total_files = len(file_list)
         logger.info(f"Starting analysis of {total_files} files")
 
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:

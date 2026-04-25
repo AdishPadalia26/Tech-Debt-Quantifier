@@ -13,11 +13,13 @@ import {
 import { ActiveTrendPoint } from '@/types';
 
 interface Props {
-  points: ActiveTrendPoint[];
+  points?: ActiveTrendPoint[] | null;
 }
 
 export default function ActiveDebtChart({ points }: Props) {
-  if (!points.length) {
+  const safePoints = Array.isArray(points) ? points : [];
+
+  if (!safePoints.length) {
     return (
       <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
         <h3 className="text-lg font-semibold text-white mb-2">
@@ -52,6 +54,8 @@ export default function ActiveDebtChart({ points }: Props) {
     );
   };
 
+  const latestPoint = safePoints[safePoints.length - 1];
+
   return (
     <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
       <div className="flex justify-between items-start mb-4">
@@ -63,16 +67,16 @@ export default function ActiveDebtChart({ points }: Props) {
         </div>
         <div className="text-right">
           <p className="text-cyan-400 text-lg font-semibold">
-            ${points[points.length - 1].active_cost_usd.toLocaleString()}
+            ${latestPoint.active_cost_usd.toLocaleString()}
           </p>
           <p className="text-gray-500 text-xs">
-            {points[points.length - 1].active_finding_count} active findings
+            {latestPoint.active_finding_count} active findings
           </p>
         </div>
       </div>
 
       <ResponsiveContainer width="100%" height={240}>
-        <LineChart data={points}>
+        <LineChart data={safePoints}>
           <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
           <XAxis
             dataKey="date_display"

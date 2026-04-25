@@ -32,6 +32,7 @@ from database.crud import (
 from services.finding_aggregator import FindingAggregator
 from intelligence.ownership_analyzer import OwnershipAnalyzer
 from intelligence.local_llm_service import LocalLLMService
+from intelligence.hybrid_metrics_agent import HybridMetricsAgent
 from intelligence.report_writer_agent import ReportWriterAgent
 from intelligence.semantic_triage_agent import SemanticTriageAgent
 from tools.architecture_analysis import ArchitectureAnalyzer
@@ -1402,3 +1403,59 @@ def test_report_writer_falls_back_when_llm_unavailable() -> None:
     assert "app" in summary
     assert priorities[0]["file_or_module"] == "app"
     assert priorities[0]["why"] == "Split responsibilities"
+
+
+def test_hybrid_metrics_agent_applies_bounded_adjustments() -> None:
+    """Hybrid metrics should calibrate numeric values within bounded ranges."""
+    import asyncio
+
+    service = LocalLLMService(
+        llm=_FakeLLM(
+            '{"cost_multiplier":1.1,"hours_multiplier":1.05,"score_delta":0.4,'
+            '"category_adjustments":{"security":1.15},"rationale":"Hotspots are riskier than static estimates.",'
+            '"confidence":"medium"}'
+        )
+    )
+    agent = HybridMetricsAgent(service)
+    analysis = {
+        "total_cost_usd": 1000.0,
+        "total_remediation_hours": 20.0,
+        "total_remediation_sprints": 2.5,
+        "debt_score": 4.0,
+        "cost_by_category": {
+            "security": {"cost_usd": 400.0, "hours": 8.0},
+            "code_quality": {"cost_usd": 600.0, "hours": 12.0},
+        },
+        "debt_items": [
+            {"category": "security", "cost_usd": 400.0, "adjusted_minutes": 480.0},
+            {"category": "code_quality", "cost_usd": 600.0, "adjusted_minutes": 720.0},
+        ],
+        "findings": [
+            {"category": "security", "cost_usd": 400.0, "effort_hours": 8.0},
+        ],
+        "module_summaries": [
+            {"module": "app", "total_cost_usd": 1000.0, "total_effort_hours": 20.0},
+        ],
+    }
+
+    calibration = asyncio.run(agent.calibrate(analysis, [], {}, {}))
+    adjusted = agent.apply(analysis, calibration)
+
+    assert calibration["cost_multiplier"] == 1.1
+    assert adjusted["total_cost_usd"] == 1100.0
+    assert adjusted["total_remediation_hours"] == 21.0
+    assert adjusted["debt_score"] == 4.4
+    assert adjusted["cost_by_category"]["security"]["cost_usd"] > 400.0
+
+
+def test_hybrid_metrics_agent_falls_back_to_neutral_adjustments() -> None:
+    """Hybrid metrics should remain deterministic when the LLM is unavailable."""
+    import asyncio
+
+    service = LocalLLMService(llm=_FakeLLM("", should_fail=True))
+    agent = HybridMetricsAgent(service)
+    calibration = asyncio.run(agent.calibrate({}, [], {}, {}))
+
+    assert calibration["cost_multiplier"] == 1.0
+    assert calibration["hours_multiplier"] == 1.0
+    assert calibration["score_delta"] == 0.0

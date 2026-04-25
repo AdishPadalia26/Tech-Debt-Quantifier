@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 
 import { pollResults } from '@/lib/api';
@@ -15,6 +15,7 @@ interface Props {
 
 const STEPS = [
   { key: 'queued', label: 'Queued', pct: 5 },
+  { key: 'processing', label: 'Preparing analysis', pct: 10 },
   { key: 'running', label: 'Cloning repository', pct: 20 },
   { key: 'analyzing', label: 'Running analysis', pct: 60 },
   { key: 'reporting', label: 'Generating report', pct: 85 },
@@ -24,20 +25,44 @@ const STEPS = [
 export default function ProgressBar({ jobId, onComplete }: Props) {
   const [status, setStatus] = useState('queued');
   const [error, setError] = useState('');
+  const [progress, setProgress] = useState(5);
+  const [phase, setPhase] = useState('Queued');
+  const onCompleteRef = useRef(onComplete);
 
   useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
+
+  useEffect(() => {
+    let cancelled = false;
+
     pollResults(jobId, (result) => {
+      if (cancelled) return;
       setStatus(result.status);
-      if (result.status === 'failed') {
+      setProgress(result.progress ?? 0);
+      setPhase(result.phase ?? '');
+      if (result.status === 'failed' || result.status === 'error') {
         setError(result.error || 'Analysis failed');
       }
     })
-      .then(onComplete)
-      .catch((err) => setError(err.message));
-  }, [jobId, onComplete]);
+      .then((result) => {
+        if (!cancelled) {
+          void onCompleteRef.current(result);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Analysis failed');
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [jobId]);
 
   const currentStep = STEPS.find((s) => s.key === status) || STEPS[0];
-  const pct = currentStep.pct;
+  const pct = progress || currentStep.pct;
 
   if (error) {
     return (
@@ -62,7 +87,7 @@ export default function ProgressBar({ jobId, onComplete }: Props) {
       <CardContent className="space-y-5">
         <div className="space-y-2">
           <div className="flex justify-between text-sm text-muted-foreground">
-            <span>{currentStep.label}</span>
+            <span>{phase || currentStep.label}</span>
             <span>Job {jobId.slice(0, 8)}</span>
           </div>
           <Progress value={pct} />

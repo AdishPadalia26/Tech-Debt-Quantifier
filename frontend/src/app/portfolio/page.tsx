@@ -56,10 +56,10 @@ function asNumber(value: unknown, fallback: number = 0): number {
 }
 
 const RISK_STYLES = {
-  critical: 'bg-red-900/40 text-red-400 border border-red-800',
-  high:     'bg-orange-900/40 text-orange-400 border border-orange-800',
-  medium:   'bg-yellow-900/40 text-yellow-400 border border-yellow-800',
-  low:      'bg-green-900/40 text-green-400 border border-green-800',
+  critical: 'border border-red-500/30 bg-red-500/10 text-red-300',
+  high:     'border border-orange-500/30 bg-orange-500/10 text-orange-300',
+  medium:   'border border-amber-500/30 bg-amber-500/10 text-amber-300',
+  low:      'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
 };
 
 const RISK_DOT = {
@@ -398,11 +398,13 @@ export default function PortfolioPage() {
                     </td>
 
                     {/* Risk badge */}
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs
-                                        font-medium ${RISK_STYLES[repo.risk_level]}`}>
-                        <span className={`inline-block w-1.5 h-1.5 rounded-full
-                                          mr-1.5 ${RISK_DOT[repo.risk_level]}`} />
+                    <td className="px-4 py-3 align-middle">
+                      <span
+                        className={`inline-flex min-w-fit items-center gap-2 whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold capitalize tracking-wide ${RISK_STYLES[repo.risk_level]}`}
+                      >
+                        <span
+                          className={`inline-block h-2 w-2 shrink-0 rounded-full ${RISK_DOT[repo.risk_level]}`}
+                        />
                         {repo.risk_level}
                       </span>
                     </td>

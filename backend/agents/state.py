@@ -9,6 +9,7 @@ class AgentState(TypedDict):
 
     github_url: str
     repo_id: str
+    github_access_token: Optional[str]
 
     repo_path: Optional[str]
     clone_status: Optional[str]
@@ -23,6 +24,7 @@ class AgentState(TypedDict):
     priority_actions: Optional[list]
     roi_analysis: Optional[dict]
     llm_insights: Optional[dict]
+    hybrid_metrics: Optional[dict]
 
     job_id: str
     status: str

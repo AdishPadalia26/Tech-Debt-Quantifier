@@ -66,6 +66,7 @@ export interface DebtReport {
   debt_score?: number;
   cost_by_category?: Record<string, CostByCategory>;
   debt_items?: DebtItem[];
+  findings?: StructuredFinding[];
   repo_profile?: RepoProfile;
   sanity_check?: {
     your_cost_per_function: number;
@@ -108,9 +109,11 @@ export interface ROIAnalysis {
 
 export interface JobResult {
   job_id: string;
-  status: "queued" | "running" | "complete" | "failed";
+  status: "queued" | "running" | "processing" | "complete" | "failed" | "error";
   scan_id?: string;
   error?: string;
+  progress?: number;
+  phase?: string;
   // Flat keys (normalized response)
   debt_score?: number;
   total_cost_usd?: number;

@@ -25,14 +25,15 @@ def set_jobs_reference(jobs: dict[str, Any]) -> None:
 @router.get("/integrations/status")
 async def integrations_status():
     """Check which optional integrations are configured."""
+    jira_ok = jira_client.is_configured()
     return {
         "slack": {
             "configured": slack_notifier.is_configured(),
             "channel": slack_notifier.default_channel,
         },
         "jira": {
-            "configured": jira_client.is_configured(),
-            "server": jira_client.server,
+            "configured": jira_ok,
+            "server": jira_client.server if jira_ok else "",
             "project": jira_client.project,
         },
     }
@@ -59,18 +60,31 @@ async def create_jira_tickets(
     max_tickets: int = 10,
     min_severity: str = "medium",
 ):
-    """Create Jira tickets for top debt items when Jira is configured."""
     db = SessionLocal()
     try:
-        result = ensure_complete_result(job_id, get_result_payload(job_id, _jobs_ref, db))
+        payload = get_result_payload(job_id, _jobs_ref, db)
     finally:
         db.close()
 
+    if not payload:
+        raise HTTPException(
+            404,
+            f"Job '{job_id}' not found or not complete yet. "
+            "Wait for the scan to finish before creating tickets.",
+        )
+
+    result = ensure_complete_result(job_id, payload)
     outcome = jira_client.create_tickets_for_analysis(
         result,
         max_tickets=max_tickets,
         min_severity=min_severity,
     )
     if not outcome.get("ok"):
-        raise HTTPException(400, outcome.get("error", "Jira export failed"))
+        raise HTTPException(400, outcome.get("error", "Jira error"))
     return outcome
+
+
+@router.get("/jira/test")
+async def test_jira_connection():
+    """Test Jira credentials without creating issues."""
+    return jira_client.test_connection()

@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from database.models import Scan
@@ -28,19 +28,20 @@ def get_result_payload(job_id: str, jobs: dict[str, Any], db: Session) -> dict[s
     return scan.raw_result if scan else None
 
 
-def build_pdf_response(job_id: str, result: dict[str, Any]) -> StreamingResponse:
+def build_pdf_response(job_id: str, result: dict[str, Any]) -> Response:
     """Generate a downloadable PDF response from a completed analysis result."""
-    from reports.pdf_generator import TechDebtPDFGenerator
+    from report_generator import generate_pdf_report
 
-    generator = TechDebtPDFGenerator()
-    analysis = result.get("raw_analysis") or result
-    pdf_bytes = generator.generate(analysis, result)
-    repo_name = (result.get("github_url", "report").split("/")[-1]) or "report"
-    filename = f"tech-debt-{repo_name}-{datetime.now().strftime('%Y%m%d')}.pdf"
-    return StreamingResponse(
-        io.BytesIO(pdf_bytes),
+    pdf_bytes = generate_pdf_report(result)
+    repo_name = ((result.get("github_url") or "report").split("/")[-1]) or "report"
+    filename = f"tech-debt-{repo_name}-{job_id[:8]}.pdf"
+    return Response(
+        content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(len(pdf_bytes)),
+        },
     )
 
 

@@ -7,7 +7,10 @@ class AnalyzeRequest(BaseModel):
     """Request model for repository analysis."""
 
     github_url: str = Field(..., description="GitHub repository URL to analyze")
-    repo_id: str = Field(..., description="Unique identifier for the repository")
+    repo_id: str | None = Field(
+        default=None,
+        description="Optional unique identifier for the repository",
+    )
 
 
 class AnalyzeResponse(BaseModel):

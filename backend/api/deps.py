@@ -1,6 +1,7 @@
 """Shared API dependencies."""
 
 import os
+from typing import Any
 
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -27,6 +28,19 @@ def get_jwt_payload(
         return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
     except JWTError:
         raise HTTPException(401, "Invalid token")
+
+
+def get_jwt_payload_optional(
+    creds: HTTPAuthorizationCredentials = Depends(auth_scheme),
+) -> dict[str, Any] | None:
+    """Decode and return the JWT payload when present, else allow anonymous access."""
+    if not creds:
+        return None
+
+    try:
+        return jwt.decode(creds.credentials, JWT_SECRET, algorithms=[JWT_ALG])
+    except JWTError:
+        return None
 
 
 def get_current_user(
@@ -76,3 +90,14 @@ def get_github_access_token(payload: dict = Depends(get_jwt_payload)) -> str:
     if not token:
         raise HTTPException(403, "GitHub account not connected")
     return str(token)
+
+
+def get_github_access_token_optional(
+    payload: dict[str, Any] | None = Depends(get_jwt_payload_optional),
+) -> str | None:
+    """Return the GitHub access token when the caller is authenticated."""
+    if not payload:
+        return None
+
+    token = payload.get("gh_token")
+    return str(token) if token else None

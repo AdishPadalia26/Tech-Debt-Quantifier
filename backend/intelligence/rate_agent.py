@@ -161,7 +161,9 @@ class RateIntelligenceAgent:
 
         except Exception as e:
             logger.warning(f"Levels.fyi fetch failed: {e}")
-            return self._levels_fallback(technology)
+            fallback = self._levels_fallback(technology)
+            self._cache.set(cache_key, "levels_fyi", fallback)
+            return fallback
 
     def _levels_fallback(self, technology: str) -> dict[str, Any]:
         """Return Levels.fyi fallback rates."""
@@ -252,7 +254,9 @@ class RateIntelligenceAgent:
 
         except Exception as e:
             logger.warning(f"Stack Overflow fetch failed: {e}")
-            return self._stackoverflow_fallback()
+            fallback = self._stackoverflow_fallback()
+            self._cache.set(cache_key, "stackoverflow", fallback)
+            return fallback
 
     def _stackoverflow_fallback(self) -> dict[str, Any]:
         """Return Stack Overflow fallback rates."""

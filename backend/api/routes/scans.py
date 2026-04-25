@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from api.deps import get_current_user
+from api.deps import get_current_user, get_current_user_optional
 from database.connection import DB_AVAILABLE, SessionLocal
 from database.crud import (
     add_finding_feedback,
@@ -20,14 +20,21 @@ router = APIRouter(tags=["scans"])
 
 
 @router.get("/scan/{scan_id}")
-async def get_scan(scan_id: str, user: User = Depends(get_current_user)):
+async def get_scan(
+    scan_id: str, user: User | None = Depends(get_current_user_optional)
+):
     """Get a specific scan by ID."""
     if not DB_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available.")
 
     db = SessionLocal()
     try:
-        scan = db.query(Scan).filter(Scan.id == scan_id, Scan.user_id == user.id).first()
+        query = db.query(Scan).filter(Scan.id == scan_id)
+        if user is not None:
+            query = query.filter(Scan.user_id == user.id)
+        else:
+            query = query.filter(Scan.user_id.is_(None))
+        scan = query.first()
         if not scan:
             raise HTTPException(404, "Scan not found")
         return {
@@ -48,14 +55,16 @@ async def get_scan(scan_id: str, user: User = Depends(get_current_user)):
 
 
 @router.get("/scan/{scan_id}/summary")
-async def get_scan_summary(scan_id: str, user: User = Depends(get_current_user)):
+async def get_scan_summary(
+    scan_id: str, user: User | None = Depends(get_current_user_optional)
+):
     """Get normalized summary data for a specific scan."""
     if not DB_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available.")
 
     db = SessionLocal()
     try:
-        summary = get_scan_summary_data(db, scan_id, user_id=user.id)
+        summary = get_scan_summary_data(db, scan_id, user_id=user.id if user else None)
         if summary is None:
             raise HTTPException(404, "Scan not found")
         return summary
@@ -72,7 +81,7 @@ async def get_scan_findings_endpoint(
     min_confidence: float | None = None,
     limit: int = 50,
     offset: int = 0,
-    user: User = Depends(get_current_user),
+    user: User | None = Depends(get_current_user_optional),
 ):
     """Get structured findings for a specific scan."""
     if not DB_AVAILABLE:
@@ -83,7 +92,7 @@ async def get_scan_findings_endpoint(
         findings = query_scan_findings(
             db,
             scan_id,
-            user_id=user.id,
+            user_id=user.id if user else None,
             category=category,
             severity=severity,
             module=module,
@@ -106,7 +115,7 @@ async def get_scan_findings_endpoint(
 
 @router.get("/scan/{scan_id}/modules")
 async def get_scan_modules_endpoint(
-    scan_id: str, user: User = Depends(get_current_user)
+    scan_id: str, user: User | None = Depends(get_current_user_optional)
 ):
     """Get module summaries for a specific scan."""
     if not DB_AVAILABLE:
@@ -114,7 +123,7 @@ async def get_scan_modules_endpoint(
 
     db = SessionLocal()
     try:
-        modules = get_scan_modules(db, scan_id, user_id=user.id)
+        modules = get_scan_modules(db, scan_id, user_id=user.id if user else None)
         if modules is None:
             raise HTTPException(404, "Scan not found")
         return {"scan_id": scan_id, "modules": modules, "total": len(modules)}
@@ -124,7 +133,7 @@ async def get_scan_modules_endpoint(
 
 @router.get("/scan/{scan_id}/roadmap")
 async def get_scan_roadmap_endpoint(
-    scan_id: str, user: User = Depends(get_current_user)
+    scan_id: str, user: User | None = Depends(get_current_user_optional)
 ):
     """Get remediation roadmap buckets for a specific scan."""
     if not DB_AVAILABLE:
@@ -132,7 +141,7 @@ async def get_scan_roadmap_endpoint(
 
     db = SessionLocal()
     try:
-        roadmap = get_scan_roadmap(db, scan_id, user_id=user.id)
+        roadmap = get_scan_roadmap(db, scan_id, user_id=user.id if user else None)
         if roadmap is None:
             raise HTTPException(404, "Scan not found")
         return {"scan_id": scan_id, "roadmap": roadmap}

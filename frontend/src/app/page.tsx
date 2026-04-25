@@ -1,9 +1,18 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { AreaChart, Card as TremorCard, DonutChart, Legend } from '@tremor/react';
+import { Card as TremorCard } from '@tremor/react';
 import { motion } from 'motion/react';
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
+import {
+  Area,
+  CartesianGrid,
+  Legend as RechartsLegend,
+  XAxis,
+  YAxis,
+  AreaChart as RechartsAreaChart,
+} from 'recharts';
 import {
   ArrowRight,
   CheckCircle2,
@@ -23,6 +32,7 @@ import {
 } from 'lucide-react';
 
 import AnalyzeForm from '@/components/AnalyzeForm';
+import { ErrorBoundary } from '@/components/error-boundary';
 import ProgressBar from '@/components/ProgressBar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -85,9 +95,27 @@ import {
 } from '@/lib/api';
 import { repoDetailPath } from '@/lib/routes';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 type AppState = 'idle' | 'analyzing' | 'complete' | 'error';
 
-const CHART_COLORS = ['teal', 'blue', 'amber', 'violet', 'rose', 'emerald'];
+const authHeaders = (): HeadersInit => {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+  const token = window.localStorage.getItem('tdq_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
+const CATEGORY_CHART_COLORS = [
+  '#4f98a3',
+  '#f59e0b',
+  '#10b981',
+  '#f97316',
+  '#60a5fa',
+  '#f43f5e',
+  '#a78bfa',
+  '#22c55e',
+];
 
 const SEVERITY_BADGE: Record<string, string> = {
   critical: 'bg-red-500/15 text-red-400 border-red-500/20',
@@ -166,7 +194,17 @@ function formatCategoryName(value?: string | null) {
 }
 
 function formatFilePath(value?: string | null) {
-  return (value || '').replace(/^\/tmp\/repos\/[^/]+\//, '');
+  return (value || '')
+    .replace(/^\/tmp\/repos\/[^/]+\//, '')
+    .replace(/^[A-Za-z]:\/.*?tech-debt-repos\/[^/]+\/?/i, '')
+    .replace(/^[A-Za-z]:\/.*?tech-debt-quantifier\/backend\/\.cache\/tech-debt-repos\/[^/]+\/?/i, '')
+    .replace(/\\/g, '/');
+}
+
+function formatModulePath(value?: string | null) {
+  const normalized = formatFilePath(value);
+  if (!normalized || normalized === '.') return 'root';
+  return normalized;
 }
 
 function EmptyCard({
@@ -493,15 +531,23 @@ export default function Home() {
   const [slackSent, setSlackSent] = useState(false);
   const [jiraCreating, setJiraCreating] = useState(false);
   const [jiraResult, setJiraResult] = useState<{
+    ok?: boolean;
     epic_url?: string;
+    epic_key?: string;
     total_created?: number;
+    total_failed?: number;
+    created?: Array<{ key: string; url: string; summary: string }>;
+    failed?: Array<{ file: string; error: string }>;
+    error?: string;
   } | null>(null);
+  const [jiraError, setJiraError] = useState<string | null>(null);
   const [integrations, setIntegrations] = useState<{
     slack: { configured: boolean; channel: string };
     jira: { configured: boolean; server: string; project: string };
   } | null>(null);
+  const currentGithubUrlRef = useRef('');
 
-  const handleJobStarted = (id: string, githubUrl?: string) => {
+  const handleJobStarted = useCallback((id: string, githubUrl?: string) => {
     setJobId(id);
     setAppState('analyzing');
     setResult(null);
@@ -514,10 +560,14 @@ export default function Home() {
     setScanRoadmap(null);
     setScanFindings(null);
     setJiraResult(null);
-    if (githubUrl) setCurrentGithubUrl(githubUrl);
-  };
+    setJiraError('');
+    if (githubUrl) {
+      currentGithubUrlRef.current = githubUrl;
+      setCurrentGithubUrl(githubUrl);
+    }
+  }, []);
 
-  const handleComplete = async (jobResult: JobResult) => {
+  const handleComplete = useCallback(async (jobResult: JobResult) => {
     if (jobResult.status === 'failed') {
       setError(jobResult.error || 'Analysis failed');
       setAppState('error');
@@ -528,11 +578,15 @@ export default function Home() {
     setAppState('complete');
 
     try {
+      const githubUrl = currentGithubUrlRef.current;
+      if (!githubUrl) {
+        return;
+      }
       const [history, summary, richHistory, unresolved] = await Promise.all([
-        getRepoHistory(currentGithubUrl),
-        getRepositorySummary(currentGithubUrl),
-        getRepoHistoryRich(currentGithubUrl),
-        getRepositoryUnresolved(currentGithubUrl, 6),
+        getRepoHistory(githubUrl),
+        getRepositorySummary(githubUrl),
+        getRepoHistoryRich(githubUrl),
+        getRepositoryUnresolved(githubUrl, 6),
       ]);
       setRepoHistory(history);
       setRepoSummary(summary);
@@ -552,14 +606,14 @@ export default function Home() {
     } catch (e) {
       console.log('History not available yet:', e);
     }
-  };
+  }, []);
 
   const handleDownloadPDF = async () => {
     if (!jobId) return;
     setDownloading(true);
     try {
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/report/${jobId}/pdf`
+        `${API_URL}/report/${jobId}/pdf`
       );
       if (!response.ok) throw new Error('PDF generation failed');
 
@@ -596,7 +650,7 @@ export default function Home() {
   };
 
   useEffect(() => {
-    fetch(`${process.env.NEXT_PUBLIC_API_URL}/integrations/status`)
+    fetch(`${API_URL}/integrations/status`)
       .then((r) => r.json())
       .then(setIntegrations)
       .catch(console.error);
@@ -606,7 +660,7 @@ export default function Home() {
     if (!jobId) return;
     setSlackSending(true);
     try {
-      const r = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/report/${jobId}/slack`, {
+      const r = await fetch(`${API_URL}/report/${jobId}/slack`, {
         method: 'POST',
       });
       if (!r.ok) throw new Error(await r.text());
@@ -622,14 +676,21 @@ export default function Home() {
   const handleCreateJira = async () => {
     if (!jobId) return;
     setJiraCreating(true);
+    setJiraError(null);
+    setJiraResult(null);
     try {
-      const r = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/report/${jobId}/jira`, {
+      const r = await fetch(`${API_URL}/report/${jobId}/jira`, {
         method: 'POST',
+        headers: authHeaders(),
       });
-      if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
+      if (!r.ok) {
+        setJiraError(data.detail || data.error || 'Jira error');
+        return;
+      }
       setJiraResult(data);
     } catch (err) {
+      setJiraError('Network error - could not reach backend.');
       console.error('Jira failed:', err);
     } finally {
       setJiraCreating(false);
@@ -637,12 +698,25 @@ export default function Home() {
   };
 
   const analysis = (result?.raw_analysis ?? result) as DebtReport | null;
-  const debtScore = analysis?.debt_score ?? result?.debt_score ?? 0;
-  const totalCost = analysis?.total_cost_usd ?? result?.total_cost_usd ?? 0;
+  const debtScore =
+    analysis?.debt_score ??
+    result?.debt_score ??
+    repoSummary?.debt_score ??
+    0;
+  const totalCost =
+    analysis?.total_cost_usd ??
+    result?.total_cost_usd ??
+    repoSummary?.total_cost_usd ??
+    0;
   const totalHours =
-    analysis?.total_remediation_hours ?? result?.total_remediation_hours ?? 0;
+    analysis?.total_remediation_hours ??
+    result?.total_remediation_hours ??
+    repoSummary?.total_hours ??
+    0;
   const totalSprints =
-    analysis?.total_remediation_sprints ?? result?.total_remediation_sprints ?? 0;
+    analysis?.total_remediation_sprints ??
+    result?.total_remediation_sprints ??
+    0;
   const animatedCost = useCountUp(Math.round(totalCost));
   const animatedHours = useCountUp(Math.round(totalHours));
   const scoreColor =
@@ -658,11 +732,33 @@ export default function Home() {
     .map(([key, value]) => ({
       name: formatCategoryName(key),
       value: Math.round(value.cost_usd),
+      color:
+        CATEGORY_CHART_COLORS[
+          Object.keys(analysis?.cost_by_category ?? {}).indexOf(key) %
+            CATEGORY_CHART_COLORS.length
+        ],
     }))
     .sort((a, b) => b.value - a.value);
-  const priorityActions = (analysis?.priority_actions ?? []) as ActionItem[];
+  const nestedPriorityActions = Array.isArray(analysis?.priority_actions)
+    ? (analysis?.priority_actions as ActionItem[])
+    : [];
+  const priorityActions = (
+    nestedPriorityActions.length > 0
+      ? nestedPriorityActions
+      : ((result?.priority_actions ?? []) as ActionItem[])
+  ) as ActionItem[];
   const debtItems = (analysis?.debt_items ?? []) as DebtItemRecord[];
-  const roi = analysis?.roi_analysis ?? {};
+  const currentScanFindings = (
+    scanFindings?.findings ??
+    ((analysis?.findings as StructuredFinding[] | undefined) ?? [])
+  ) as StructuredFinding[];
+  const nestedRoi =
+    analysis?.roi_analysis &&
+    typeof analysis.roi_analysis === 'object' &&
+    Object.keys(analysis.roi_analysis).length > 0
+      ? analysis.roi_analysis
+      : null;
+  const roi = nestedRoi ?? result?.roi_analysis ?? {};
   const roiChartData = Array.from({ length: 12 }, (_, i) => ({
     month: `Month ${i + 1}`,
     'Cumulative Savings': Math.round(
@@ -672,7 +768,10 @@ export default function Home() {
     ),
     'Fix Cost': (roi as { total_fix_cost?: number }).total_fix_cost ?? 0,
   }));
-  const roadmapSections = Object.entries(scanRoadmap?.roadmap ?? {});
+  const roadmapSections = Object.entries(
+    scanRoadmap?.roadmap ??
+      ((analysis as { roadmap?: Record<string, unknown[]> } | undefined)?.roadmap ?? {})
+  ) as [string, Array<{ finding_id: string; title: string; file_path: string }>] [];
   const latestActive = richRepoHistory?.latest_active;
   const latestTrend = richRepoHistory?.latest;
 
@@ -772,6 +871,7 @@ export default function Home() {
       ) : null}
 
       {appState === 'complete' && analysis ? (
+        <ErrorBoundary>
         <section className="space-y-6">
           {analysis.executive_summary ? (
             <Card className="border-border bg-card">
@@ -822,7 +922,9 @@ export default function Home() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={handleDownloadPDF}
+                      onClick={() => {
+                        void handleDownloadPDF().catch(console.error);
+                      }}
                       disabled={downloading}
                     >
                       {downloading ? (
@@ -842,7 +944,9 @@ export default function Home() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={handleSendSlack}
+                        onClick={() => {
+                          void handleSendSlack().catch(console.error);
+                        }}
                         disabled={slackSending || slackSent}
                         className={slackSent ? 'border-emerald-500/30 text-emerald-400' : ''}
                       >
@@ -869,37 +973,104 @@ export default function Home() {
                 ) : null}
 
                 {integrations?.jira?.configured ? (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleCreateJira}
-                        disabled={jiraCreating || !!jiraResult}
-                        className={jiraResult ? 'border-emerald-500/30 text-emerald-400' : ''}
-                      >
-                        {jiraResult ? (
-                          <>
-                            <CheckCircle2 className="mr-2 size-4" />
-                            {jiraResult.total_created} tickets
-                          </>
-                        ) : jiraCreating ? (
-                          <>
-                            <Loader2 className="mr-2 size-4 animate-spin" />
-                            Creating...
-                          </>
-                        ) : (
-                          <>
-                            <Ticket className="mr-2 size-4" />
-                            Jira
-                          </>
-                        )}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      Create tickets in {integrations?.jira?.project} project
-                    </TooltipContent>
-                  </Tooltip>
+                  <div className="flex flex-col items-end gap-1">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            void handleCreateJira().catch(console.error);
+                          }}
+                          disabled={jiraCreating || !!jiraResult?.total_created}
+                          className={
+                            jiraResult?.total_created
+                              ? 'border-emerald-500/30 text-emerald-400'
+                              : ''
+                          }
+                        >
+                          {jiraResult?.total_created ? (
+                            <>
+                              <CheckCircle2 className="mr-2 size-4" />
+                              {jiraResult.total_created} tickets
+                            </>
+                          ) : jiraCreating ? (
+                            <>
+                              <Loader2 className="mr-2 size-4 animate-spin" />
+                              Creating...
+                            </>
+                          ) : (
+                            <>
+                              <Ticket className="mr-2 size-4" />
+                              Jira
+                            </>
+                          )}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        Create tickets in {integrations?.jira?.project} project
+                      </TooltipContent>
+                    </Tooltip>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void (async () => {
+                          try {
+                            const r = await fetch(`${API_URL}/jira/test`, {
+                              headers: authHeaders(),
+                            });
+                            const d = await r.json();
+                            window.alert(
+                              d.ok
+                                ? `Jira connected.\nUser: ${d.user}\nProject: ${d.project_name} (${d.project_key})`
+                                : `Jira error:\n${d.error}`
+                            );
+                          } catch (err) {
+                            console.error('Jira connection test failed:', err);
+                            window.alert('Could not reach backend to test Jira.');
+                          }
+                        })();
+                      }}
+                      className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                    >
+                      Test Jira connection
+                    </button>
+                    {jiraError ? (
+                      <p className="max-w-xs text-right text-xs text-destructive">
+                        {jiraError}
+                      </p>
+                    ) : null}
+                    {jiraResult?.total_failed && jiraResult.total_failed > 0 ? (
+                      <p className="text-xs text-amber-400">
+                        {jiraResult.total_failed} ticket
+                        {jiraResult.total_failed === 1 ? '' : 's'} failed to create
+                      </p>
+                    ) : null}
+                    {jiraResult?.created && jiraResult.created.length > 0 ? (
+                      <div className="mt-1 space-y-0.5 text-right text-xs text-muted-foreground">
+                        {jiraResult.created.slice(0, 5).map((ticket) => (
+                          <div key={ticket.key}>
+                            <Link
+                              href={ticket.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-primary underline underline-offset-2 hover:text-primary/80"
+                            >
+                              {ticket.key}
+                            </Link>{' '}
+                            <span className="text-muted-foreground/70">
+                              {ticket.summary}
+                            </span>
+                          </div>
+                        ))}
+                        {jiraResult.created.length > 5 ? (
+                          <span className="text-muted-foreground/70">
+                            +{jiraResult.created.length - 5} more
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
                 ) : null}
 
                 {jiraResult?.epic_url ? (
@@ -909,7 +1080,7 @@ export default function Home() {
                     rel="noopener noreferrer"
                     className="text-xs text-primary hover:underline"
                   >
-                    View Epic
+                    View Epic {jiraResult.epic_key ?? ''}
                   </Link>
                 ) : null}
               </div>
@@ -950,20 +1121,69 @@ export default function Home() {
                   </div>
                 ) : (
                   <div className="flex flex-col items-center gap-4">
-                    <DonutChart
-                      data={categoryData}
-                      category="value"
-                      index="name"
-                      colors={CHART_COLORS}
-                      valueFormatter={(value) => `$${value.toLocaleString()}`}
-                      className="h-48"
-                      showTooltip
-                    />
-                    <Legend
-                      categories={categoryData.map((item) => item.name)}
-                      colors={categoryData.map((_, index) => CHART_COLORS[index % CHART_COLORS.length])}
-                      className="text-xs"
-                    />
+                    <div className="h-56 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={categoryData}
+                            dataKey="value"
+                            nameKey="name"
+                            innerRadius={64}
+                            outerRadius={102}
+                            paddingAngle={3}
+                            stroke="rgba(15, 14, 13, 0.95)"
+                            strokeWidth={2}
+                          >
+                            {categoryData.map((entry) => (
+                              <Cell key={entry.name} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <text
+                            x="50%"
+                            y="47%"
+                            textAnchor="middle"
+                            className="fill-[#797876] text-[11px] uppercase tracking-[0.18em]"
+                          >
+                            Total
+                          </text>
+                          <text
+                            x="50%"
+                            y="56%"
+                            textAnchor="middle"
+                            className="fill-[#cdccca] font-mono text-[20px] font-semibold"
+                          >
+                            ${animatedCost.toLocaleString()}
+                          </text>
+                          <RechartsTooltip
+                            formatter={(value: unknown) => {
+                              const numericValue = Array.isArray(value)
+                                ? Number(value[0] ?? 0)
+                                : Number(value ?? 0);
+                              return [`$${numericValue.toLocaleString()}`, 'Cost'];
+                            }}
+                            contentStyle={{
+                              backgroundColor: '#1c1b19',
+                              border: '1px solid rgba(205, 204, 202, 0.12)',
+                              borderRadius: '10px',
+                              color: '#cdccca',
+                            }}
+                            itemStyle={{ color: '#cdccca' }}
+                            labelStyle={{ color: '#797876' }}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs">
+                      {categoryData.map((item) => (
+                        <div key={item.name} className="flex items-center gap-2 text-foreground">
+                          <span
+                            className="size-2.5 rounded-full"
+                            style={{ backgroundColor: item.color }}
+                          />
+                          <span>{item.name}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </CardContent>
@@ -1103,16 +1323,68 @@ export default function Home() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <AreaChart
-                    data={roiChartData}
-                    index="month"
-                    categories={['Cumulative Savings', 'Fix Cost']}
-                    colors={['teal', 'rose']}
-                    valueFormatter={(value) => `$${value.toLocaleString()}`}
-                    className="h-48"
-                    showLegend
-                    showGridLines={false}
-                  />
+                  <div className="h-56 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RechartsAreaChart data={roiChartData}>
+                        <defs>
+                          <linearGradient id="savingsFill" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#10b981" stopOpacity={0.35} />
+                            <stop offset="95%" stopColor="#10b981" stopOpacity={0.03} />
+                          </linearGradient>
+                          <linearGradient id="costFill" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#f97316" stopOpacity={0.28} />
+                            <stop offset="95%" stopColor="#f97316" stopOpacity={0.02} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid stroke="rgba(205, 204, 202, 0.08)" vertical={false} />
+                        <XAxis
+                          dataKey="month"
+                          tick={{ fill: '#797876', fontSize: 12 }}
+                          axisLine={false}
+                          tickLine={false}
+                        />
+                        <YAxis
+                          tick={{ fill: '#797876', fontSize: 12 }}
+                          axisLine={false}
+                          tickLine={false}
+                          tickFormatter={(value) => `$${Number(value).toLocaleString()}`}
+                        />
+                        <RechartsTooltip
+                          formatter={(value: unknown, name: unknown) => {
+                            const numericValue = Array.isArray(value)
+                              ? Number(value[0] ?? 0)
+                              : Number(value ?? 0);
+                            return [`$${numericValue.toLocaleString()}`, String(name ?? '')];
+                          }}
+                          contentStyle={{
+                            backgroundColor: '#1c1b19',
+                            border: '1px solid rgba(205, 204, 202, 0.12)',
+                            borderRadius: '10px',
+                            color: '#cdccca',
+                          }}
+                          itemStyle={{ color: '#cdccca' }}
+                          labelStyle={{ color: '#797876' }}
+                        />
+                        <RechartsLegend
+                          wrapperStyle={{ color: '#cdccca', fontSize: '12px' }}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="Cumulative Savings"
+                          stroke="#10b981"
+                          fill="url(#savingsFill)"
+                          strokeWidth={3}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="Fix Cost"
+                          stroke="#f97316"
+                          fill="url(#costFill)"
+                          strokeWidth={3}
+                        />
+                      </RechartsAreaChart>
+                    </ResponsiveContainer>
+                  </div>
                 </CardContent>
               </Card>
             </TabsContent>
@@ -1140,7 +1412,7 @@ export default function Home() {
                         >
                           <div className="flex items-center justify-between gap-3">
                             <p className="truncate text-sm font-medium text-foreground">
-                              {module.module}
+                              {formatModulePath(module.module)}
                             </p>
                             <span className="font-mono text-xs tabular-nums text-muted-foreground">
                               ${Math.round(module.total_cost_usd).toLocaleString()}
@@ -1236,10 +1508,11 @@ export default function Home() {
             />
             <FindingsCard
               title="Current Scan Findings"
-              findings={scanFindings?.findings ?? []}
+              findings={currentScanFindings}
             />
           </div>
         </section>
+        </ErrorBoundary>
       ) : null}
     </div>
   );

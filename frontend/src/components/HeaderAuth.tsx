@@ -5,27 +5,46 @@ import Image from "next/image";
 import Link from "next/link";
 import { GitBranch, LogOut, Plus } from "lucide-react";
 
-import { clearToken } from "@/lib/api";
+import { AUTH_CHANGED_EVENT, clearToken, getCurrentUser } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export function HeaderAuth() {
   const [user, setUser] = useState<{ login: string; avatar_url?: string } | null>(null);
 
   useEffect(() => {
-    const token = window.localStorage.getItem("tdq_token");
-    if (!token) return;
+    const syncUser = async () => {
+      try {
+        const currentUser = await getCurrentUser();
+        if (currentUser) {
+          setUser(currentUser);
+          return;
+        }
+        setUser(null);
+      } catch {
+        setUser(null);
+      }
+    };
 
-    fetch(`${API_URL}/me`, { headers: { Authorization: `Bearer ${token}` } })
-      .then((res) => (res.ok ? res.json() : Promise.reject()))
-      .then(setUser)
-      .catch(() => clearToken());
+    void syncUser();
+
+    const handleAuthChanged = () => {
+      void syncUser();
+    };
+
+    window.addEventListener(AUTH_CHANGED_EVENT, handleAuthChanged);
+    window.addEventListener("focus", handleAuthChanged);
+
+    return () => {
+      window.removeEventListener(AUTH_CHANGED_EVENT, handleAuthChanged);
+      window.removeEventListener("focus", handleAuthChanged);
+    };
   }, []);
 
   const handleLogin = () => {
-    window.location.href = `${API_URL}/auth/github/login`;
+    const apiUrl =
+      process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+    window.location.href = `${apiUrl}/auth/github/login`;
   };
 
   const handleLogout = () => {

@@ -12,8 +12,9 @@ class CrawlerAgent:
 
         github_url = state["github_url"]
         repo_id = state["repo_id"]
+        github_access_token = state.get("github_access_token")
 
-        result = clone_repo(github_url, repo_id)
+        result = clone_repo(github_url, repo_id, github_access_token)
 
         if result["status"] in ["cloned", "already_exists"]:
             state["repo_path"] = result["path"]
