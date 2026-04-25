@@ -1011,30 +1011,7 @@ export default function Home() {
                         Create tickets in {integrations?.jira?.project} project
                       </TooltipContent>
                     </Tooltip>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void (async () => {
-                          try {
-                            const r = await fetch(`${API_URL}/jira/test`, {
-                              headers: authHeaders(),
-                            });
-                            const d = await r.json();
-                            window.alert(
-                              d.ok
-                                ? `Jira connected.\nUser: ${d.user}\nProject: ${d.project_name} (${d.project_key})`
-                                : `Jira error:\n${d.error}`
-                            );
-                          } catch (err) {
-                            console.error('Jira connection test failed:', err);
-                            window.alert('Could not reach backend to test Jira.');
-                          }
-                        })();
-                      }}
-                      className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
-                    >
-                      Test Jira connection
-                    </button>
+                    
                     {jiraError ? (
                       <p className="max-w-xs text-right text-xs text-destructive">
                         {jiraError}
