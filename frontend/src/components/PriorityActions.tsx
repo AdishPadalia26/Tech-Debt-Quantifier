@@ -37,6 +37,22 @@ export default function PriorityActions({ actions, roiAnalysis }: Props) {
               <span className="text-xs font-medium text-gray-400">
                 {RANK_BADGES[i]}
               </span>
+              {action.estimation_confidence && (
+                <span className={`
+                  ml-2 text-xs px-2 py-0.5 rounded-full font-medium
+                  ${action.estimation_confidence === 'high'
+                    ? 'bg-green-900/50 text-green-300'
+                    : action.estimation_confidence === 'medium'
+                    ? 'bg-yellow-900/50 text-yellow-300'
+                    : 'bg-gray-800 text-gray-400'}
+                `}>
+                  {action.estimation_confidence === 'high'
+                    ? '✓ High confidence estimate'
+                    : action.estimation_confidence === 'medium'
+                    ? '~ Medium confidence estimate'
+                    : '⚠ Formula fallback'}
+                </span>
+              )}
               <h4 className="text-white font-semibold mt-1">
                 {action.title}
               </h4>
@@ -50,7 +66,13 @@ export default function PriorityActions({ actions, roiAnalysis }: Props) {
             </span>
           </div>
 
-          <p className="text-sm text-gray-300 mb-4">{action.why}</p>
+          <p className="text-sm text-gray-300 mb-2">{action.why}</p>
+
+          {action.fix_summary && (
+            <p className="text-xs text-gray-400 mb-4 italic">
+              Fix: {action.fix_summary}
+            </p>
+          )}
 
           <div className="grid grid-cols-3 gap-4">
             <div>

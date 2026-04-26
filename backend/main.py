@@ -143,6 +143,13 @@ def normalize_analysis_result(raw: dict[str, Any] | None) -> dict[str, Any]:
                 "function": item.get("function"),
                 "cost_factors": item.get("cost_factors") or [],
                 "cost_explanation": item.get("cost_explanation") or "",
+                # Hybrid estimation fields
+                "estimation_confidence": item.get("estimation_confidence") or "",
+                "severity_score": item.get("severity_score"),
+                "business_risk_score": item.get("business_risk_score"),
+                "fix_complexity_score": item.get("fix_complexity_score"),
+                "primary_risk": item.get("primary_risk") or "",
+                "fix_summary": item.get("fix_summary") or "",
             }
         )
 
@@ -200,6 +207,11 @@ def normalize_analysis_result(raw: dict[str, Any] | None) -> dict[str, Any]:
             else []
         ),
         "roadmap": payload.get("roadmap") if isinstance(payload.get("roadmap"), dict) else {},
+        # Hybrid estimation metadata
+        "estimation_method": payload.get("estimation_method") or "formula_only",
+        "llm_model": payload.get("llm_model"),
+        "items_estimated_by_llm": _safe_int(payload.get("items_estimated_by_llm")),
+        "items_estimated_by_formula": _safe_int(payload.get("items_estimated_by_formula")),
     }
 
 

@@ -145,6 +145,9 @@ type ActionItem = {
   file_or_module?: string;
   file?: string;
   estimated_hours?: number;
+  estimation_confidence?: string;
+  fix_summary?: string;
+  primary_risk?: string;
 };
 
 type DebtItemRecord = {
@@ -198,6 +201,8 @@ function formatFilePath(value?: string | null) {
     .replace(/^\/tmp\/repos\/[^/]+\//, '')
     .replace(/^[A-Za-z]:\/.*?tech-debt-repos\/[^/]+\/?/i, '')
     .replace(/^[A-Za-z]:\/.*?tech-debt-quantifier\/backend\/\.cache\/tech-debt-repos\/[^/]+\/?/i, '')
+    .replace(/:$/, '')
+    .replace(/\?$/, '')
     .replace(/\\/g, '/');
 }
 
@@ -230,12 +235,14 @@ function KpiCard({
   subtext,
   color = 'text-foreground',
   index = 0,
+  tooltipContent,
 }: {
   label: string;
   value: string;
   subtext?: string;
   color?: string;
   index?: number;
+  tooltipContent?: React.ReactNode;
 }) {
   return (
     <motion.div
@@ -244,8 +251,18 @@ function KpiCard({
       transition={{ delay: index * 0.08, duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
     >
       <TremorCard className="border-border bg-card p-5">
-        <p className="mb-1 text-xs uppercase tracking-[0.18em] text-muted-foreground">
+        <p className="mb-1 text-xs uppercase tracking-[0.18em] text-muted-foreground flex items-center gap-1">
           {label}
+          {tooltipContent && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="cursor-help text-muted-foreground/60 hover:text-muted-foreground">ℹ</span>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-xs bg-card border-border shadow-xl p-3">
+                {tooltipContent}
+              </TooltipContent>
+            </Tooltip>
+          )}
         </p>
         <p className={cn('font-mono text-3xl font-semibold tabular-nums', color)}>
           {value}
@@ -280,6 +297,22 @@ function ActionCard({ action, index }: { action: ActionItem; index: number }) {
               <Badge variant="outline" className={cn('text-xs', badgeClass)}>
                 {severity}
               </Badge>
+              {action.estimation_confidence && (
+                <span className={cn(
+                  'text-xs px-2 py-0.5 rounded-full font-medium',
+                  action.estimation_confidence === 'high'
+                    ? 'bg-emerald-500/15 text-emerald-400'
+                    : action.estimation_confidence === 'medium'
+                    ? 'bg-amber-500/15 text-amber-400'
+                    : 'bg-muted text-muted-foreground'
+                )}>
+                  {action.estimation_confidence === 'high'
+                    ? '✓ High confidence'
+                    : action.estimation_confidence === 'medium'
+                    ? '~ Medium confidence'
+                    : '⚠ Formula fallback'}
+                </span>
+              )}
               <span className="text-xs text-muted-foreground">Sprint {sprint}</span>
             </div>
             <span className="shrink-0 font-mono text-sm font-semibold tabular-nums text-foreground">
@@ -290,6 +323,12 @@ function ActionCard({ action, index }: { action: ActionItem; index: number }) {
           <p className="mb-1 text-sm font-medium text-foreground">
             {action.title || action.file_or_module || 'Unknown item'}
           </p>
+
+          {action.fix_summary && (
+            <p className="text-xs text-muted-foreground mt-0.5 mb-1 italic">
+              Fix: {action.fix_summary}
+            </p>
+          )}
 
           {(action.file_or_module || action.file) ? (
             <p className="mb-3 w-fit rounded bg-muted/50 px-2 py-0.5 font-mono text-xs text-muted-foreground">
@@ -1064,27 +1103,41 @@ export default function Home() {
             </div>
           </TooltipProvider>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <KpiCard
-              label="Debt Score"
-              value={`${debtScore.toFixed(1)} / 10`}
-              subtext={scoreSubtext}
-              color={scoreColor}
-              index={0}
-            />
-            <KpiCard
-              label="Total Debt Cost"
-              value={`$${animatedCost.toLocaleString()}`}
-              subtext="Estimated remediation cost"
-              index={1}
-            />
-            <KpiCard
-              label="Remediation Time"
-              value={`${animatedHours.toLocaleString()} hrs`}
-              subtext={`~${totalSprints.toFixed(1)} engineering sprints`}
-              index={2}
-            />
-          </div>
+          <TooltipProvider>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <KpiCard
+                label="Debt Score"
+                value={`${debtScore.toFixed(1)} / 10`}
+                subtext={scoreSubtext}
+                color={scoreColor}
+                index={0}
+              />
+              <KpiCard
+                label="Total Debt Cost"
+                value={`$${animatedCost.toLocaleString()}`}
+                subtext="Estimated remediation cost"
+                index={1}
+                tooltipContent={
+                  <div className="w-72 text-xs text-muted-foreground">
+                    <p className="font-semibold text-foreground mb-1">How costs are estimated</p>
+                    <p>Each debt item is analyzed by the local AI model, which
+                    estimates realistic remediation hours based on the actual code context.
+                    Those hours are then adjusted using git churn, severity, and repo risk
+                    multipliers, then multiplied by an hourly engineering rate.</p>
+                    <p className="mt-1 text-muted-foreground/70">
+                      Formula: LLM hours × severity × churn × repo risk × hourly rate
+                    </p>
+                  </div>
+                }
+              />
+              <KpiCard
+                label="Remediation Time"
+                value={`${animatedHours.toLocaleString()} hrs`}
+                subtext={`~${totalSprints.toFixed(1)} engineering sprints`}
+                index={2}
+              />
+            </div>
+          </TooltipProvider>
 
           <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
             <Card className="border-border bg-card">

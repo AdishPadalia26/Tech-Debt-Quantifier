@@ -96,6 +96,14 @@ export interface PriorityAction {
   estimated_cost: number;
   saves_per_month: number;
   sprint: string;
+  // Hybrid estimation fields
+  estimation_confidence?: string;
+  primary_risk?: string;
+  fix_summary?: string;
+  cost_explanation?: string;
+  top_cost_drivers?: string[];
+  base_cost_usd?: number;
+  combined_multiplier?: number;
 }
 
 export interface ROIAnalysis {

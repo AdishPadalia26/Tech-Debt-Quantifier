@@ -26,6 +26,7 @@ plotly
 python-dotenv
 pydantic
 httpx
+ollama
 pytest
 aiofiles
 diskcache

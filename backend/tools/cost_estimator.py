@@ -10,7 +10,10 @@ Uses the intelligence layer for dynamic data:
 - SecurityCostAgent for risk-weighted security costs
 """
 
+import concurrent.futures
 import logging
+import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import Any
 
@@ -20,6 +23,7 @@ from constants import (
     MAINTENANCE_OVERHEAD_MULTIPLIER,
     SANITY_CHECK_VARIANCE_THRESHOLD,
 )
+from tools.llm_estimator import LLMEstimator
 from tools.scoring import (
     aggregate_repo_score,
     build_finding_payload,
@@ -42,6 +46,35 @@ class CostEstimator:
 
     def __init__(self) -> None:
         self._data_sources: list[str] = []
+
+        # --- Hybrid LLM estimation setup ---
+        self._hybrid_enabled = os.getenv(
+            "HYBRID_ESTIMATION_ENABLED", "true"
+        ).lower() in ("true", "1", "yes")
+        self.model_name = os.getenv("OLLAMA_MODEL", "qwen3.5:latest")
+        self.llm_estimator: LLMEstimator | None = None
+        if self._hybrid_enabled:
+            try:
+                import ollama as _ollama_pkg
+
+                ollama_host = os.getenv(
+                    "OLLAMA_BASE_URL", "http://localhost:11434/v1"
+                ).replace("/v1", "")
+                client = _ollama_pkg.Client(host=ollama_host)
+                self.llm_estimator = LLMEstimator(
+                    ollama_client=client, model=self.model_name,
+                )
+                logger.info(
+                    "[COST EST] Hybrid LLM estimation enabled (model=%s)",
+                    self.model_name,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "[COST EST] Could not initialise Ollama client: %s. "
+                    "Falling back to formula-only estimation.",
+                    exc,
+                )
+                self.llm_estimator = None
 
     def _track_data_source(self, source_name: str, used_fallback: bool) -> None:
         """Track which data sources were used and whether fallbacks were needed."""
@@ -150,6 +183,273 @@ class CostEstimator:
             categories[cat]["hours"] = round(categories[cat]["hours"], 2)
 
         return categories
+
+    # ------------------------------------------------------------------
+    # Hybrid LLM estimation helpers
+    # ------------------------------------------------------------------
+
+    def _estimate_single_item(
+        self,
+        item: dict[str, Any],
+        churn_data: dict[str, int],
+        repo_risk: float,
+        hourly_rate: float,
+    ) -> dict[str, Any]:
+        """Hybrid estimation for one debt item.
+
+        LLM provides hours + reasoning, formula applies multipliers.
+
+        Args:
+            item: Original debt item dict.
+            churn_data: Mapping of file path to change count.
+            repo_risk: Repository-level risk multiplier.
+            hourly_rate: Blended hourly engineering rate.
+
+        Returns:
+            Enriched debt item with hybrid cost fields.
+        """
+        if self.llm_estimator is None:
+            llm_result = LLMEstimator._fallback_estimates(
+                None,  # type: ignore[arg-type]
+                item.get("category", "code_quality"),
+                item.get("severity", "medium"),
+            )
+        else:
+            llm_result = self.llm_estimator.estimate_debt_item(
+                file_path=item.get("file", ""),
+                category=item.get("category", "code_quality"),
+                severity=item.get("severity", "medium"),
+                description=item.get("description", item.get("issue_text", "")),
+                code_snippet=item.get("code_snippet", ""),
+                function_name=item.get("function", ""),
+                language=item.get("language", ""),
+            )
+
+        return self._apply_formula(item, llm_result, churn_data, repo_risk, hourly_rate)
+
+    def _apply_formula(
+        self,
+        item: dict[str, Any],
+        llm_result: dict[str, Any],
+        churn_data: dict[str, int],
+        repo_risk: float,
+        hourly_rate: float,
+    ) -> dict[str, Any]:
+        """Apply deterministic formula multipliers on top of LLM hours.
+
+        Args:
+            item: Original debt item dict.
+            llm_result: Dict returned by LLMEstimator.
+            churn_data: File path -> change count mapping.
+            repo_risk: Repo-level risk multiplier.
+            hourly_rate: Blended hourly rate.
+
+        Returns:
+            Enriched debt item dict.
+        """
+        base_hours = llm_result["realistic_hours"]
+
+        # --- churn multiplier ---
+        file_path = item.get("file", "")
+        churn_count = churn_data.get(file_path, 0)
+        if churn_count >= 20:
+            churn_multiplier = 2.5
+        elif churn_count >= 10:
+            churn_multiplier = 1.8
+        elif churn_count >= 5:
+            churn_multiplier = 1.3
+        elif churn_count >= 1:
+            churn_multiplier = 1.1
+        else:
+            churn_multiplier = 1.0
+
+        # --- severity multiplier from LLM score ---
+        severity_score = llm_result["severity_score"]
+        severity_multiplier = 1.0 + (severity_score - 5) * 0.08
+        severity_multiplier = max(0.7, min(2.0, severity_multiplier))
+
+        repo_multiplier = max(1.0, min(2.0, repo_risk))
+
+        combined_multiplier = (
+            churn_multiplier * severity_multiplier * repo_multiplier
+        )
+        adjusted_hours = base_hours * combined_multiplier
+        base_cost_usd = base_hours * hourly_rate
+        cost_usd = adjusted_hours * hourly_rate
+
+        # --- explanation builder ---
+        cost_factors: list[dict[str, str]] = []
+        cost_factors.append({
+            "label": "LLM-estimated base effort",
+            "value": f"{base_hours:.1f} hrs",
+            "impact": "high",
+            "source": "llm",
+        })
+        if llm_result["confidence"] != "high":
+            cost_factors.append({
+                "label": "Estimation confidence",
+                "value": llm_result["confidence"],
+                "impact": "medium",
+                "source": "llm",
+            })
+        cost_factors.append({
+            "label": "Severity score",
+            "value": f"{severity_score}/10 → {severity_multiplier:.2f}x",
+            "impact": "high" if severity_score >= 7 else "medium",
+            "source": "hybrid",
+        })
+        if churn_count > 0:
+            cost_factors.append({
+                "label": "Git churn",
+                "value": f"{churn_count} changes → {churn_multiplier:.1f}x",
+                "impact": "high" if churn_multiplier >= 1.8 else "medium",
+                "source": "formula",
+            })
+        if repo_multiplier > 1.05:
+            cost_factors.append({
+                "label": "Repo/team risk",
+                "value": f"{repo_multiplier:.2f}x",
+                "impact": "medium",
+                "source": "formula",
+            })
+        cost_factors.append({
+            "label": "Hourly rate",
+            "value": f"${hourly_rate}/hr",
+            "impact": "medium",
+            "source": "config",
+        })
+
+        explanation_parts: list[str] = []
+        cost_rationale = llm_result.get("cost_rationale", "")
+        if cost_rationale:
+            explanation_parts.append(cost_rationale)
+        if churn_multiplier > 1.1:
+            explanation_parts.append(
+                f"This file changed {churn_count} times recently, "
+                f"adding a {churn_multiplier:.1f}x maintenance risk multiplier."
+            )
+        if severity_multiplier > 1.15:
+            explanation_parts.append(
+                f"Severity score of {severity_score}/10 increased effort by "
+                f"{severity_multiplier:.2f}x."
+            )
+        explanation_parts.append(
+            f"At ${hourly_rate}/hr, base cost is ${base_cost_usd:,.0f}. "
+            f"After multipliers ({combined_multiplier:.2f}x total), "
+            f"final estimate is ${cost_usd:,.0f}."
+        )
+        cost_explanation = " ".join(explanation_parts)
+
+        return {
+            **item,
+            "base_hours": round(base_hours, 2),
+            "adjusted_hours": round(adjusted_hours, 2),
+            "base_minutes": round(base_hours * 60, 1),
+            "adjusted_minutes": round(adjusted_hours * 60, 1),
+            "base_cost_usd": round(base_cost_usd, 2),
+            "cost_usd": round(cost_usd, 2),
+            "hourly_rate": hourly_rate,
+            "remediation_hours": round(adjusted_hours, 2),
+            "severity_multiplier": round(severity_multiplier, 3),
+            "churn_multiplier": round(churn_multiplier, 2),
+            "repo_multiplier": round(repo_multiplier, 2),
+            "combined_multiplier": round(combined_multiplier, 3),
+            "severity_score": severity_score,
+            "business_risk_score": llm_result["business_risk_score"],
+            "fix_complexity_score": llm_result["fix_complexity_score"],
+            "estimation_confidence": llm_result["confidence"],
+            "primary_risk": llm_result.get("primary_risk", ""),
+            "fix_summary": llm_result.get("fix_summary", ""),
+            "cost_factors": cost_factors,
+            "cost_explanation": cost_explanation,
+        }
+
+    def _estimate_single_item_with_timeout(
+        self,
+        item: dict[str, Any],
+        churn_data: dict[str, int],
+        repo_risk: float,
+        hourly_rate: float,
+        timeout_sec: int = 30,
+    ) -> dict[str, Any]:
+        """Wrap single-item estimation with a per-item timeout.
+
+        Args:
+            item: Debt item dict.
+            churn_data: File path -> change count.
+            repo_risk: Repo risk multiplier.
+            hourly_rate: Blended hourly rate.
+            timeout_sec: Max seconds per item.
+
+        Returns:
+            Enriched debt item dict (fallback on timeout).
+        """
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            future = ex.submit(
+                self._estimate_single_item,
+                item, churn_data, repo_risk, hourly_rate,
+            )
+            try:
+                return future.result(timeout=timeout_sec)
+            except concurrent.futures.TimeoutError:
+                logger.warning(
+                    "LLM estimation timed out for %s — using fallback",
+                    item.get("file", "?"),
+                )
+                fallback = LLMEstimator(
+                    ollama_client=None, model="",  # type: ignore[arg-type]
+                )._fallback_estimates(
+                    item.get("category", "code_quality"),
+                    item.get("severity", "medium"),
+                )
+                return self._apply_formula(
+                    item, fallback, churn_data, repo_risk, hourly_rate,
+                )
+
+    def _estimate_all_items(
+        self,
+        debt_items: list[dict[str, Any]],
+        churn_data: dict[str, int],
+        repo_risk: float,
+        hourly_rate: float,
+        max_workers: int = 4,
+    ) -> list[dict[str, Any]]:
+        """Estimate all items in parallel, preserving order.
+
+        Args:
+            debt_items: List of debt item dicts.
+            churn_data: File path -> change count mapping.
+            repo_risk: Repo risk multiplier.
+            hourly_rate: Blended hourly rate.
+            max_workers: Max parallel Ollama calls.
+
+        Returns:
+            List of enriched debt items.
+        """
+        results: list[dict[str, Any] | None] = [None] * len(debt_items)
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(
+                    self._estimate_single_item_with_timeout,
+                    item, churn_data, repo_risk, hourly_rate,
+                ): idx
+                for idx, item in enumerate(debt_items)
+            }
+            for future in as_completed(futures):
+                idx = futures[future]
+                try:
+                    results[idx] = future.result()
+                except Exception as e:
+                    logger.error("Estimation failed at index %d: %s", idx, e)
+                    results[idx] = {
+                        **debt_items[idx],
+                        "cost_usd": 0,
+                        "cost_explanation": f"Estimation failed: {e}",
+                        "estimation_confidence": "failed",
+                    }
+
+        return [r for r in results if r is not None]
 
     def estimate_total_cost(self, repo_path: str, github_url: str = None) -> dict[str, Any]:
         """Estimate total technical debt cost for a repository.
@@ -459,6 +759,28 @@ class CostEstimator:
             item["ownership_risk"] = ownership.get("ownership_risk")
             item["ownership_bus_factor"] = ownership.get("bus_factor")
 
+        # --- Hybrid LLM estimation pass ---
+        combined_multiplier = multipliers.get(
+            "combined_multiplier", MAINTENANCE_OVERHEAD_MULTIPLIER,
+        )
+        repo_risk_value = max(1.0, min(2.0, combined_multiplier / 3.0))
+
+        churn_data: dict[str, int] = {}
+        for rf in risky_files:
+            churn_data[rf.get("file", "")] = rf.get("change_count", 0)
+
+        if self._hybrid_enabled and self.llm_estimator is not None:
+            logger.info(
+                "[COST EST] Running hybrid LLM estimation on %d items...",
+                len(debt_items),
+            )
+            debt_items = self._estimate_all_items(
+                debt_items, churn_data, repo_risk_value, base_rate,
+            )
+            logger.info("[COST EST] Hybrid estimation complete.")
+        else:
+            logger.info("[COST EST] Hybrid estimation disabled — using formula only.")
+
         function_count = complexity_results.get("total_functions", 0)
 
         baseline_hours = (FUNCTION_BASELINE_MINUTES / 60) * function_count
@@ -472,7 +794,6 @@ class CostEstimator:
 
         total_cost = sum(item.get("cost_usd", 0) for item in debt_items)
         total_cost_with_baseline = total_cost + baseline_cost
-        combined_multiplier = multipliers.get("combined_multiplier", MAINTENANCE_OVERHEAD_MULTIPLIER)
         total_cost = total_cost_with_baseline * combined_multiplier
         logger.info(f"[COST EST] Total with baseline and multipliers: ${total_cost:.2f}")
 
@@ -491,12 +812,23 @@ class CostEstimator:
         total_hours = total_hours + baseline_hours * combined_multiplier
         total_sprints = total_hours / HOURS_PER_SPRINT
 
+        # --- Estimation method metadata ---
+        items_by_llm = sum(
+            1 for item in debt_items
+            if item.get("estimation_confidence") not in ("low", "failed", None)
+        )
+        items_by_formula = len(debt_items) - items_by_llm
+
         logger.info(f"[COST EST] ========== TOTALS ==========")
         logger.info(f"[COST EST] Total debt items: {len(debt_items)}")
         logger.info(f"[COST EST] Total cost: ${total_cost:.2f}")
         logger.info(f"[COST EST] Total hours: {total_hours:.2f}")
         logger.info(f"[COST EST] Function count: {function_count}")
         logger.info(f"[COST EST] Combined multiplier: {combined_multiplier}x")
+        logger.info(
+            "[COST EST] Estimation: %d by LLM, %d by formula",
+            items_by_llm, items_by_formula,
+        )
 
         return {
             "repo_path": repo_path,
@@ -525,6 +857,12 @@ class CostEstimator:
             "multiplier_breakdown": multipliers,
             "rate_confidence": stack_rates,
             "ai_suspected_files": len(ai_files),
+            "estimation_method": (
+                "hybrid_llm_formula" if self._hybrid_enabled else "formula_only"
+            ),
+            "llm_model": self.model_name if self._hybrid_enabled else None,
+            "items_estimated_by_llm": items_by_llm,
+            "items_estimated_by_formula": items_by_formula,
             "hourly_rates": {
                 "blended_rate": round(base_rate, 2),
                 "confidence": rates_source or "medium",
@@ -532,7 +870,7 @@ class CostEstimator:
             },
             "data_sources": {
                 "rates": "Dynamic: BLS + Levels.fyi + SO + DuckDuckGo",
-                "remediation_times": "SonarCloud API or fallback",
+                "remediation_times": "Hybrid: LLM + SonarCloud API",
                 "security_costs": "IBM breach report + Verizon DBIR",
                 "benchmarks": "CISQ via web search",
                 "vulnerabilities": "OSV.dev live",

@@ -58,24 +58,44 @@ class ReportWriterAgent:
             for index, item in enumerate(parsed[:3], start=1):
                 if not isinstance(item, dict):
                     continue
+                finding = top_findings[index - 1] if index - 1 < len(top_findings) else {}
+                cost_factors = finding.get("cost_factors") or []
+                top_drivers = [
+                    f"{f['label']}: {f['value']}"
+                    for f in cost_factors
+                    if f.get("impact") == "high"
+                ][:3]
                 normalized.append(
                     {
                         "rank": int(item.get("rank", index)),
-                        "title": item.get("title", f"Remediate {top_findings[index - 1].get('category', 'debt')}"),
+                        "title": item.get("title", f"Remediate {finding.get('category', 'debt')}"),
                         "file_or_module": item.get(
                             "file_or_module",
-                            top_findings[index - 1].get("module")
-                            or top_findings[index - 1].get("file_path"),
+                            finding.get("module")
+                            or finding.get("file_path"),
                         ),
                         "why": item.get("why", "High-value remediation opportunity"),
                         "estimated_hours": float(
-                            item.get("estimated_hours", top_findings[index - 1].get("effort_hours", 0))
+                            item.get("estimated_hours", finding.get("effort_hours", 0))
                         ),
                         "estimated_cost": float(
-                            item.get("estimated_cost", top_findings[index - 1].get("cost_usd", 0))
+                            item.get("estimated_cost", finding.get("cost_usd", 0))
                         ),
-                        "saves_per_month": float(item.get("saves_per_month", 0)),
+                        "saves_per_month": float(
+                            item.get("saves_per_month", float(item.get("estimated_cost", 0)) * 0.0125
+                        ),
+                        "monthly_savings": float(
+                            item.get("monthly_savings", float(item.get("estimated_cost", 0)) * 0.0125)
+                        ),
                         "sprint": item.get("sprint", f"Sprint {index}"),
+                        # Hybrid estimation pass-through
+                        "estimation_confidence": finding.get("estimation_confidence", ""),
+                        "primary_risk": finding.get("primary_risk", ""),
+                        "fix_summary": finding.get("fix_summary", ""),
+                        "cost_explanation": finding.get("cost_explanation", ""),
+                        "top_cost_drivers": top_drivers,
+                        "base_cost_usd": float(finding.get("base_cost_usd", 0) or 0),
+                        "combined_multiplier": float(finding.get("combined_multiplier", 1.0) or 1.0),
                     }
                 )
             if normalized:
@@ -85,9 +105,10 @@ class ReportWriterAgent:
     def roi_analysis(self, analysis: dict[str, Any]) -> dict[str, Any]:
         """Return deterministic ROI analysis from scan metrics."""
         total_cost = float(analysis.get("total_cost_usd", 0) or 0)
-        annual_savings = round(total_cost * 0.40, 2)
-        payback_months = round((total_cost / annual_savings) * 12) if annual_savings else 99
-        roi_pct = round(((annual_savings * 3 - total_cost) / total_cost) * 100) if total_cost else 0
+        annual_maintenance_savings = round(total_cost * 0.15, 2)
+        monthly_savings = round(annual_maintenance_savings / 12, 2)
+        payback_months = round((total_cost / annual_maintenance_savings) * 12) if annual_maintenance_savings else 99
+        roi_pct = round(((annual_maintenance_savings * 3 - total_cost) / total_cost) * 100) if total_cost else 0
         recommended_budget = round(total_cost / 4, 2) if total_cost else 0
         recommendation = (
             "Prioritize the top hotspots this quarter for the strongest maintenance ROI."
@@ -96,7 +117,8 @@ class ReportWriterAgent:
         )
         return {
             "total_fix_cost": round(total_cost, 2),
-            "annual_maintenance_savings": round(annual_savings, 2),
+            "annual_maintenance_savings": round(annual_maintenance_savings, 2),
+            "monthly_savings": round(monthly_savings, 2),
             "payback_months": payback_months,
             "3_year_roi_pct": roi_pct,
             "recommended_budget": recommended_budget,
@@ -135,6 +157,12 @@ class ReportWriterAgent:
         priorities: list[dict[str, Any]] = []
         for index, finding in enumerate(findings[:3], start=1):
             triage = triage_by_id.get(finding.get("id"), {})
+            cost_factors = finding.get("cost_factors") or []
+            top_drivers = [
+                f"{f['label']}: {f['value']}"
+                for f in cost_factors
+                if f.get("impact") == "high"
+            ][:3]
             priorities.append(
                 {
                     "rank": index,
@@ -146,8 +174,17 @@ class ReportWriterAgent:
                     ),
                     "estimated_hours": round(float(finding.get("effort_hours", 0) or 0), 1),
                     "estimated_cost": round(float(finding.get("cost_usd", 0) or 0), 2),
-                    "saves_per_month": round(float(finding.get("cost_usd", 0) or 0) * 0.015, 2),
+                    "saves_per_month": round(float(finding.get("cost_usd", 0) or 0) * 0.0125, 2),
+                    "monthly_savings": round(float(finding.get("cost_usd", 0) or 0) * 0.0125, 2),
                     "sprint": f"Sprint {index}",
+                    # Hybrid estimation pass-through
+                    "estimation_confidence": finding.get("estimation_confidence", ""),
+                    "primary_risk": finding.get("primary_risk", ""),
+                    "fix_summary": finding.get("fix_summary", ""),
+                    "cost_explanation": finding.get("cost_explanation", ""),
+                    "top_cost_drivers": top_drivers,
+                    "base_cost_usd": round(float(finding.get("base_cost_usd", 0) or 0), 2),
+                    "combined_multiplier": round(float(finding.get("combined_multiplier", 1.0) or 1.0), 2),
                 }
             )
         return priorities
