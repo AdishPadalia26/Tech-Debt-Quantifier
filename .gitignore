@@ -58,3 +58,8 @@ nul
 
 # PDF reports generated
 *.pdf
+
+# Local-only project docs (kept on disk, excluded from repo)
+AGENTS.md
+CODE_REVIEW_AND_FEATURES.md
+implementation_plan.md
