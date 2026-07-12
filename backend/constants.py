@@ -109,6 +109,15 @@ HOURS_PER_SPRINT: Final[float] = 80.0
 
 DEBT_SCORE_MAX: Final[float] = 10.0
 
+# Debt score is a log-scaled health grade (higher = more debt). The midpoint is
+# anchored to the industry-average debt density, and each 10x change in density
+# moves the score by DEBT_SCORE_LOG_SLOPE points. This stretches the crowded
+# "healthy repo" band (well below industry average) across 1-4 instead of
+# compressing every well-run codebase into 0-1. With these values:
+#   0.1x industry density -> ~1.5   1x -> 5.5   8x -> ~9   16x -> 10 (capped)
+DEBT_SCORE_MIDPOINT: Final[float] = 5.5
+DEBT_SCORE_LOG_SLOPE: Final[float] = 4.0
+
 SANITY_CHECK_VARIANCE_THRESHOLD: Final[float] = 150.0
 
 SEVERITY_RANK: Final[dict[str, int]] = {

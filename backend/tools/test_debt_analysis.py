@@ -13,7 +13,7 @@ from tools.scoring import build_finding_payload, calculate_confidence
 class TestDebtAnalyzer:
     """Detect source files that appear to lack corresponding tests."""
 
-    SOURCE_EXTENSIONS = {".py", ".js", ".jsx", ".ts", ".tsx"}
+    SOURCE_EXTENSIONS = {".py", ".ipynb", ".js", ".jsx", ".ts", ".tsx"}
 
     def _is_test_file(self, file_path: str) -> bool:
         """Return whether a path looks like a test file."""

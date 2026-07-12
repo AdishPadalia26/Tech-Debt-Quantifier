@@ -2,6 +2,7 @@
 
 import shutil
 import subprocess
+import tempfile
 import uuid
 from pathlib import Path
 from shutil import which
@@ -132,21 +133,30 @@ def _build_repo_analysis(findings: list[dict], roadmap: dict | None = None) -> d
 
 
 def _make_workspace_temp_dir() -> Path:
-    """Create a writable temporary directory inside the backend workspace."""
-    base_dir = Path(__file__).resolve().parent / ".pytest_tmp_cases"
-    base_dir.mkdir(exist_ok=True)
-    temp_dir = base_dir / f"case_{uuid.uuid4().hex}"
-    temp_dir.mkdir(parents=True, exist_ok=False)
-    return temp_dir
+    """Create a writable temporary directory for repository fixture tests."""
+    return Path(tempfile.mkdtemp(prefix=f"tdq_case_{uuid.uuid4().hex}_"))
 
 
 def test_scoring_helpers() -> None:
     """Scoring helpers should use semantic ordering and bounded scores."""
     assert severity_rank("critical") > severity_rank("high")
     assert max_severity(["low", "high", "medium"]) == "high"
-    assert aggregate_repo_score(
-        total_cost=1000.0, function_count=10, cisq_per_function=200.0
-    ) == 5.0
+
+    # Log-scaled health grade: a repo at exactly the industry-average debt
+    # density (cost_per_function == benchmark) scores the midpoint.
+    at_average = aggregate_repo_score(
+        total_cost=2000.0, function_count=10, cisq_per_function=200.0
+    )
+    assert at_average == 5.5
+
+    # Below-average density scores lower, above-average scores higher, both bounded.
+    healthy = aggregate_repo_score(
+        total_cost=200.0, function_count=10, cisq_per_function=200.0
+    )
+    heavy = aggregate_repo_score(
+        total_cost=20000.0, function_count=10, cisq_per_function=200.0
+    )
+    assert 0.0 <= healthy < at_average < heavy <= 10.0
 
 
 def test_finding_aggregator_outputs() -> None:
@@ -1258,12 +1268,14 @@ def test_main_app_includes_extracted_route_groups() -> None:
 def test_analyze_endpoint_allows_anonymous_submission(monkeypatch) -> None:
     """Anonymous users should be able to queue an analysis request."""
     import main as backend_main
+    import api.routes.analyze as analyze_routes
+    from services.job_service import get_job
 
-    async def _fake_run_analysis_job(*args, **kwargs) -> None:
+    def _fake_run_analysis_job(*args, **kwargs) -> None:
         return None
 
-    monkeypatch.setattr(backend_main, "ORCHESTRATOR_AVAILABLE", True)
-    monkeypatch.setattr(backend_main, "run_analysis_job", _fake_run_analysis_job)
+    monkeypatch.setattr(analyze_routes, "ORCHESTRATOR_AVAILABLE", True)
+    monkeypatch.setattr(analyze_routes, "run_analysis_job", _fake_run_analysis_job)
 
     client = TestClient(backend_main.app)
     response = client.post(
@@ -1278,12 +1290,14 @@ def test_analyze_endpoint_allows_anonymous_submission(monkeypatch) -> None:
     payload = response.json()
     assert payload["status"] == "queued"
     job_id = payload["job_id"]
-    assert backend_main.jobs[job_id]["user_id"] is None
+    job = get_job(job_id)
+    assert job is not None
+    assert job["user_id"] is None
 
 
 def test_results_payload_stays_lightweight() -> None:
-    """Polled result payloads should omit bulky raw analysis blobs."""
-    from main import _normalize_result_payload
+    """Polled result payloads should keep bulky analysis lists nested."""
+    from api.routes.analyze import _normalize_result_payload
 
     state = {
         "raw_analysis": {
@@ -1314,10 +1328,13 @@ def test_results_payload_stays_lightweight() -> None:
     assert payload["job_id"] == "job-1"
     assert payload["scan_id"] == "scan-1"
     assert "raw" not in payload
-    assert "raw_analysis" not in payload
+    assert "raw_analysis" in payload
     assert "debt_items" not in payload
     assert "findings" not in payload
     assert "module_summaries" not in payload
+    assert len(payload["raw_analysis"]["debt_items"]) == 1
+    assert len(payload["raw_analysis"]["findings"]) == 1
+    assert len(payload["raw_analysis"]["module_summaries"]) == 1
     assert "roadmap" not in payload
 
 

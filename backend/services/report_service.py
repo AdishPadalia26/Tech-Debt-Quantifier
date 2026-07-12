@@ -16,10 +16,11 @@ from database.models import Scan
 logger = logging.getLogger(__name__)
 
 
-def get_result_payload(job_id: str, jobs: dict[str, Any], db: Session) -> dict[str, Any] | None:
-    """Load result payload from memory first, then persisted scans."""
-    if job_id in jobs:
-        job = jobs[job_id]
+def get_result_payload(job_id: str, db: Session) -> dict[str, Any] | None:
+    """Load result payload from Redis first, then persisted scans."""
+    from services.job_service import get_job
+    job = get_job(job_id)
+    if job is not None:
         if job.get("status") == "complete":
             return job.get("result")
         return None

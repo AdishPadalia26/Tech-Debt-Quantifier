@@ -49,6 +49,9 @@ def build_portfolio(db: Session, user_id: int, normalize_repo_id) -> dict[str, A
     }
 
     seen: dict[str, tuple[Scan, str]] = {}
+    # All scan ids per repo, newest-first (all_scans is ordered created_at desc),
+    # so the frontend can offer a direct "Compare two latest scans" action.
+    scan_ids_by_key: dict[str, list[str]] = {}
     for scan in all_scans:
         raw = scan.raw_result or {}
         github_url = (
@@ -58,7 +61,10 @@ def build_portfolio(db: Session, user_id: int, normalize_repo_id) -> dict[str, A
             or ""
         )
         key = normalize_repo_id(github_url) if github_url else scan.repository_id
-        if key and key not in seen:
+        if not key:
+            continue
+        scan_ids_by_key.setdefault(key, []).append(scan.id)
+        if key not in seen:
             seen[key] = (scan, github_url)
 
     repos = []
@@ -70,10 +76,14 @@ def build_portfolio(db: Session, user_id: int, normalize_repo_id) -> dict[str, A
         team = profile.get("team", {}) or {}
 
         full_url = github_url if str(github_url).startswith("http") else f"https://github.com/{key}"
+        scan_ids = scan_ids_by_key.get(key, [])
         repos.append(
             {
                 "repo_id": key,
                 "github_url": full_url,
+                "scan_count": len(scan_ids),
+                "latest_scan_id": scan_ids[0] if scan_ids else None,
+                "previous_scan_id": scan_ids[1] if len(scan_ids) > 1 else None,
                 "debt_score": float(scan.debt_score or 0),
                 "total_cost": float(scan.total_cost_usd or 0),
                 "remediation_hours": float(scan.total_hours or 0),

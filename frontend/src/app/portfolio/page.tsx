@@ -10,24 +10,18 @@ import { repoDetailPath } from '@/lib/routes';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-function getToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem('tdq_token');
-}
-
 async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
-  const token = getToken();
   const headers = new Headers(options.headers);
   headers.set('Content-Type', 'application/json');
-  if (token) {
-    headers.set('Authorization', `Bearer ${token}`);
-  }
-  return fetch(url, { ...options, headers });
+  return fetch(url, { ...options, headers, credentials: 'include' });
 }
 
 interface RepoSummary {
   repo_id: string;
   github_url: string;
+  scan_count?: number;
+  latest_scan_id?: string | null;
+  previous_scan_id?: string | null;
   debt_score: number;
   total_cost: number;
   remediation_hours: number;
@@ -475,6 +469,26 @@ export default function PortfolioPage() {
                         >
                           Open
                         </Link>
+                        {repo.scan_count && repo.scan_count >= 2 &&
+                         repo.previous_scan_id && repo.latest_scan_id ? (
+                          <Link
+                            href={`/compare/${repo.previous_scan_id}/${repo.latest_scan_id}`}
+                            title="Compare the two most recent scans"
+                            className="text-xs px-2.5 py-1 rounded
+                                       bg-amber-900/30 text-amber-400
+                                       hover:bg-amber-900/60 transition-colors"
+                          >
+                            Compare
+                          </Link>
+                        ) : (
+                          <span
+                            title="Run at least 2 scans of this repo to compare"
+                            className="text-xs px-2.5 py-1 rounded
+                                       bg-gray-800/50 text-gray-600 cursor-not-allowed"
+                          >
+                            Compare
+                          </span>
+                        )}
                         <button
                           onClick={() => handleRescan(repo.github_url)}
                           disabled={scanning === repo.github_url}

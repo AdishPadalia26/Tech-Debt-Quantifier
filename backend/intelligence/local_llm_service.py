@@ -16,12 +16,24 @@ class LocalLLMService:
 
     def __init__(self, llm: Any | None = None) -> None:
         self.timeout_seconds = float(os.getenv("LOCAL_LLM_TIMEOUT_SECONDS", "20"))
-        if llm is not None:
-            self.llm = llm
-        else:
-            from agents.llm_factory import get_llm
+        self._llm: Any | None = llm
+        self._llm_initialized = llm is not None
 
-            self.llm = get_llm("json")
+    @property
+    def llm(self) -> Any:
+        # Lazy init: ChatGroq() makes a blocking ~4s HTTP call on first use.
+        # Deferring it to the first actual LLM request means construction
+        # time doesn't block whatever instantiates LocalLLMService.
+        if not self._llm_initialized:
+            from agents.llm_factory import get_llm
+            self._llm = get_llm("json")
+            self._llm_initialized = True
+        return self._llm
+
+    @llm.setter
+    def llm(self, value: Any) -> None:
+        self._llm = value
+        self._llm_initialized = True
 
     async def invoke_text(self, prompt: str) -> str | None:
         """Invoke the model and return text content, or None on failure."""
@@ -48,7 +60,7 @@ class LocalLLMService:
             )
             return None
         except Exception as exc:
-            logger.warning("Local LLM text invocation failed: %s", exc)
+            logger.warning("Local LLM text invocation failed: %s", exc, exc_info=True)
             return None
 
     async def invoke_json(self, prompt: str) -> dict[str, Any] | list[Any] | None:

@@ -15,7 +15,7 @@ import logging
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 
 from constants import (
     FUNCTION_BASELINE_MINUTES,
@@ -51,28 +51,23 @@ class CostEstimator:
         self._hybrid_enabled = os.getenv(
             "HYBRID_ESTIMATION_ENABLED", "true"
         ).lower() in ("true", "1", "yes")
-        self.model_name = os.getenv("OLLAMA_MODEL", "qwen3.5:latest")
+        self.model_name = os.getenv("GROQ_MODEL_ID", os.getenv("OLLAMA_MODEL", "llama-3.3-70b-versatile"))
         self.llm_estimator: LLMEstimator | None = None
         if self._hybrid_enabled:
             try:
-                import ollama as _ollama_pkg
-
-                ollama_host = os.getenv(
-                    "OLLAMA_BASE_URL", "http://localhost:11434/v1"
-                ).replace("/v1", "")
-                client = _ollama_pkg.Client(host=ollama_host)
-                self.llm_estimator = LLMEstimator(
-                    ollama_client=client, model=self.model_name,
-                )
+                from agents.llm_factory import get_llm
+                self.llm_estimator = LLMEstimator(llm=get_llm("json"))
                 logger.info(
-                    "[COST EST] Hybrid LLM estimation enabled (model=%s)",
+                    "[COST EST] Hybrid LLM estimation enabled via %s (model=%s)",
+                    os.getenv("LLM_PROVIDER", "groq"),
                     self.model_name,
                 )
             except Exception as exc:
                 logger.warning(
-                    "[COST EST] Could not initialise Ollama client: %s. "
+                    "[COST EST] Could not initialise LLM for hybrid estimation: %s. "
                     "Falling back to formula-only estimation.",
                     exc,
+                    exc_info=True,
                 )
                 self.llm_estimator = None
 
@@ -84,37 +79,30 @@ class CostEstimator:
             self._data_sources.append(key)
 
     def calculate_debt_score(
-        self, total_cost: float, function_count: int, cisq_per_function: float
+        self,
+        total_cost: float,
+        function_count: int,
+        cisq_per_function: float,
+        files_scanned: int = 0,
+        doc_function_floor: int = 0,
     ) -> float:
-        """Calculate normalized debt score (0-10).
-        
-        Formula: min(10, (total_cost / (function_count * CISQ_COST_PER_FUNCTION)) * 10)
-        
-        Args:
-            total_cost: Total estimated cost in USD
-            function_count: Number of functions analyzed
-            cisq_per_function: Industry benchmark cost per function
-            
-        Returns:
-            Debt score from 0 to 10
-        """
-        logger.info(f"[DEBT SCORE DEBUG] total_cost={total_cost}, function_count={function_count}")
-        
-        if function_count == 0:
-            logger.warning("[DEBT SCORE] function_count is 0, returning 0.0")
-            return 0.0
-
-        cost_per_function = total_cost / function_count
+        """Calculate normalized debt score (0-10)."""
+        logger.info(
+            "[DEBT SCORE DEBUG] total_cost=%s, function_count=%s, files_scanned=%s, doc_floor=%s",
+            total_cost, function_count, files_scanned, doc_function_floor,
+        )
         debt_score = aggregate_repo_score(
             total_cost=total_cost,
             function_count=function_count,
             cisq_per_function=cisq_per_function,
+            files_scanned=files_scanned,
+            doc_function_floor=doc_function_floor,
         )
-
+        effective = max(function_count, files_scanned * 5, doc_function_floor, 1)
         logger.info(
-            f"[DEBT SCORE] cost_per_function=${cost_per_function:.2f}, final={debt_score}"
+            "[DEBT SCORE] effective_count=%s, cost_per_unit=$%.2f, final=%.2f",
+            effective, total_cost / effective, debt_score,
         )
-
         return debt_score
 
     def sanity_check(
@@ -210,7 +198,6 @@ class CostEstimator:
         """
         if self.llm_estimator is None:
             llm_result = LLMEstimator._fallback_estimates(
-                None,  # type: ignore[arg-type]
                 item.get("category", "code_quality"),
                 item.get("severity", "medium"),
             )
@@ -340,6 +327,12 @@ class CostEstimator:
         )
         cost_explanation = " ".join(explanation_parts)
 
+        hours_by_level = {
+            "junior": round(adjusted_hours * 2.0, 2),
+            "mid": round(adjusted_hours, 2),
+            "senior": round(adjusted_hours * 0.5, 2),
+        }
+
         return {
             **item,
             "base_hours": round(base_hours, 2),
@@ -350,6 +343,7 @@ class CostEstimator:
             "cost_usd": round(cost_usd, 2),
             "hourly_rate": hourly_rate,
             "remediation_hours": round(adjusted_hours, 2),
+            "hours_by_level": hours_by_level,
             "severity_multiplier": round(severity_multiplier, 3),
             "churn_multiplier": round(churn_multiplier, 2),
             "repo_multiplier": round(repo_multiplier, 2),
@@ -396,15 +390,86 @@ class CostEstimator:
                     "LLM estimation timed out for %s — using fallback",
                     item.get("file", "?"),
                 )
-                fallback = LLMEstimator(
-                    ollama_client=None, model="",  # type: ignore[arg-type]
-                )._fallback_estimates(
+                fallback = LLMEstimator._fallback_estimates(
                     item.get("category", "code_quality"),
                     item.get("severity", "medium"),
                 )
                 return self._apply_formula(
                     item, fallback, churn_data, repo_risk, hourly_rate,
                 )
+
+    def _estimate_batch(
+        self,
+        batch: list[dict[str, Any]],
+        churn_data: dict[str, int],
+        repo_risk: float,
+        hourly_rate: float,
+    ) -> list[dict[str, Any]]:
+        """Hybrid estimation for a batch of items via ONE LLM call.
+
+        The LLM estimates effort for every item in the batch in a single
+        request (cutting request count by ~batch_size×); the deterministic
+        formula is then applied per item.
+        """
+        if self.llm_estimator is None:
+            llm_results = [
+                LLMEstimator._fallback_estimates(
+                    it.get("category", "code_quality"),
+                    it.get("severity", "medium"),
+                )
+                for it in batch
+            ]
+        else:
+            inputs = [
+                {
+                    "file_path": it.get("file", ""),
+                    "category": it.get("category", "code_quality"),
+                    "severity": it.get("severity", "medium"),
+                    "description": it.get("description", it.get("issue_text", "")),
+                    "code_snippet": it.get("code_snippet", ""),
+                    "function_name": it.get("function", ""),
+                    "language": it.get("language", ""),
+                }
+                for it in batch
+            ]
+            llm_results = self.llm_estimator.estimate_debt_items_batch(inputs)
+
+        return [
+            self._apply_formula(item, llm_results[i], churn_data, repo_risk, hourly_rate)
+            for i, item in enumerate(batch)
+        ]
+
+    def _estimate_batch_with_timeout(
+        self,
+        batch: list[dict[str, Any]],
+        churn_data: dict[str, int],
+        repo_risk: float,
+        hourly_rate: float,
+        timeout_sec: int = 90,
+    ) -> list[dict[str, Any]]:
+        """Wrap batch estimation with a timeout; per-item fallback on timeout."""
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            future = ex.submit(
+                self._estimate_batch, batch, churn_data, repo_risk, hourly_rate,
+            )
+            try:
+                return future.result(timeout=timeout_sec)
+            except concurrent.futures.TimeoutError:
+                logger.warning(
+                    "Batch LLM estimation timed out (%d items) — using fallback",
+                    len(batch),
+                )
+                return [
+                    self._apply_formula(
+                        item,
+                        LLMEstimator._fallback_estimates(
+                            item.get("category", "code_quality"),
+                            item.get("severity", "medium"),
+                        ),
+                        churn_data, repo_risk, hourly_rate,
+                    )
+                    for item in batch
+                ]
 
     def _estimate_all_items(
         self,
@@ -413,45 +478,83 @@ class CostEstimator:
         repo_risk: float,
         hourly_rate: float,
         max_workers: int = 4,
+        batch_size: int | None = None,
     ) -> list[dict[str, Any]]:
-        """Estimate all items in parallel, preserving order.
+        """Estimate all items in batched, parallel LLM calls, preserving order.
+
+        Items are grouped into batches of ``batch_size`` (env HYBRID_BATCH_SIZE,
+        default 20) and each batch is estimated in a single LLM call, so a
+        34k-item repo makes ~1.7k requests instead of 34k — staying well under
+        provider rate limits. Batches run across ``max_workers`` threads.
 
         Args:
             debt_items: List of debt item dicts.
             churn_data: File path -> change count mapping.
             repo_risk: Repo risk multiplier.
             hourly_rate: Blended hourly rate.
-            max_workers: Max parallel Ollama calls.
+            max_workers: Max parallel LLM calls.
+            batch_size: Items per LLM call (defaults to env HYBRID_BATCH_SIZE).
 
         Returns:
             List of enriched debt items.
         """
+        if not debt_items:
+            return []
+
+        if batch_size is None:
+            try:
+                batch_size = int(os.getenv("HYBRID_BATCH_SIZE", "20"))
+            except ValueError:
+                batch_size = 20
+        batch_size = max(1, batch_size)
+
+        batches = [
+            debt_items[i:i + batch_size]
+            for i in range(0, len(debt_items), batch_size)
+        ]
+        logger.info(
+            "[COST EST] Estimating %d items in %d batches of up to %d (%d workers)",
+            len(debt_items), len(batches), batch_size, max_workers,
+        )
+
         results: list[dict[str, Any] | None] = [None] * len(debt_items)
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
                 executor.submit(
-                    self._estimate_single_item_with_timeout,
-                    item, churn_data, repo_risk, hourly_rate,
-                ): idx
-                for idx, item in enumerate(debt_items)
+                    self._estimate_batch_with_timeout,
+                    batch, churn_data, repo_risk, hourly_rate,
+                ): b_idx * batch_size
+                for b_idx, batch in enumerate(batches)
             }
             for future in as_completed(futures):
-                idx = futures[future]
+                start = futures[future]
                 try:
-                    results[idx] = future.result()
+                    enriched = future.result()
                 except Exception as e:
-                    logger.error("Estimation failed at index %d: %s", idx, e)
-                    results[idx] = {
-                        **debt_items[idx],
-                        "cost_usd": 0,
-                        "cost_explanation": f"Estimation failed: {e}",
-                        "estimation_confidence": "failed",
-                    }
+                    logger.error(
+                        "Batch estimation failed at offset %d: %s", start, e, exc_info=True,
+                    )
+                    enriched = [
+                        {
+                            **it,
+                            "cost_usd": 0,
+                            "cost_explanation": f"Estimation failed: {e}",
+                            "estimation_confidence": "failed",
+                        }
+                        for it in debt_items[start:start + batch_size]
+                    ]
+                for j, item in enumerate(enriched):
+                    results[start + j] = item
 
         return [r for r in results if r is not None]
 
-    def estimate_total_cost(self, repo_path: str, github_url: str = None) -> dict[str, Any]:
+    def estimate_total_cost(
+        self,
+        repo_path: str,
+        github_url: str = None,
+        progress_callback: Callable[[int, str], None] | None = None,
+    ) -> dict[str, Any]:
         """Estimate total technical debt cost for a repository.
         
         Uses the intelligence layer for dynamic data:
@@ -486,7 +589,16 @@ class CostEstimator:
         self._data_sources = []
         debt_items = []
 
+        def publish_progress(progress: int, phase: str) -> None:
+            if progress_callback is None:
+                return
+            try:
+                progress_callback(progress, phase)
+            except Exception:
+                logger.debug("Progress callback failed", exc_info=True)
+
         logger.info("[COST EST] Step 0: Profiling repository...")
+        publish_progress(25, "Profiling repository")
         profiler = RepoProfiler()
         profile = profiler.profile(repo_path, github_url)
         stack_rates = profile["rates"]["rates_by_category"]
@@ -496,6 +608,7 @@ class CostEstimator:
         logger.info(f"[COST EST] Profile complete - uses_ai: {profile['rates']['uses_ai']}")
 
         logger.info("[COST EST] Step 0b: Fetching dynamic benchmarks...")
+        publish_progress(30, "Fetching benchmarks and rates")
         benchmarks = BenchmarkAgent().get_current_benchmarks(
             profile["tech_stack"]["primary_language"]
         )
@@ -507,10 +620,12 @@ class CostEstimator:
         self._track_data_source("hourly_rates", rates_source == "low")
 
         logger.info("[COST EST] Step 1: Running static analysis...")
+        publish_progress(35, "Running static analysis")
         static_analyzer = StaticAnalyzer()
         complexity_results = static_analyzer.get_summary(repo_path)
 
         logger.info("[COST EST] Step 2: Running GitMiner for code quality...")
+        publish_progress(42, "Mining git hotspots")
         risky_files = GitMiner().get_risky_files(repo_path)
         code_quality_cost = 0.0
 
@@ -534,6 +649,7 @@ class CostEstimator:
         logger.info(f"[COST EST] Code quality: {len(risky_files)} files, ${code_quality_cost:.2f}")
 
         logger.info("[COST EST] Step 2a: Analyzing ownership concentration...")
+        publish_progress(48, "Analyzing ownership concentration")
         hotspot_files = [item["file"] for item in risky_files]
         ownership_analysis = OwnershipAnalyzer().analyze(
             repo_path,
@@ -548,8 +664,11 @@ class CostEstimator:
             item["top_contributor_share"] = ownership.get("top_contributor_share")
             item["ownership_risk"] = ownership.get("ownership_risk")
             item["ownership_bus_factor"] = ownership.get("bus_factor")
+            item["top_author"] = ownership.get("top_author")
+            item["ownership_confidence"] = ownership.get("ownership_confidence")
 
         logger.info("[COST EST] Step 2b: Running architecture analysis...")
+        publish_progress(54, "Analyzing architecture debt")
         architecture_items = ArchitectureAnalyzer().analyze(repo_path, base_rate * 1.2)
         architecture_cost = 0.0
         for arch_item in architecture_items:
@@ -562,6 +681,7 @@ class CostEstimator:
         )
 
         logger.info("[COST EST] Step 2c: Running duplication analysis...")
+        publish_progress(58, "Analyzing duplication debt")
         duplication_items = DuplicationAnalyzer().analyze(repo_path, base_rate)
         duplication_cost = 0.0
         for item in duplication_items:
@@ -574,6 +694,7 @@ class CostEstimator:
         )
 
         logger.info("[COST EST] Step 2d: Running reliability analysis...")
+        publish_progress(62, "Analyzing reliability debt")
         reliability_items = ReliabilityAnalyzer().analyze(repo_path, base_rate)
         reliability_cost = 0.0
         for item in reliability_items:
@@ -586,6 +707,7 @@ class CostEstimator:
         )
 
         logger.info("[COST EST] Step 2e: Running performance analysis...")
+        publish_progress(66, "Analyzing performance debt")
         performance_items = PerformanceAnalyzer().analyze(repo_path, base_rate)
         performance_cost = 0.0
         for item in performance_items:
@@ -598,6 +720,7 @@ class CostEstimator:
         )
 
         logger.info("[COST EST] Step 2f: Running dead code analysis...")
+        publish_progress(70, "Analyzing dead code")
         dead_code_items = DeadCodeAnalyzer().analyze(repo_path, base_rate)
         dead_code_cost = 0.0
         for item in dead_code_items:
@@ -610,6 +733,7 @@ class CostEstimator:
         )
 
         logger.info("[COST EST] Step 3: Running security scan with risk weighting...")
+        publish_progress(74, "Running security scan")
         security_issues = static_analyzer.run_security_scan(repo_path)
         security_cost = 0.0
         security_rate = stack_rates.get("security", {}).get("rate", base_rate)
@@ -657,6 +781,7 @@ class CostEstimator:
         logger.info(f"[COST EST] Security: {len(security_issues)} issues, total ${security_cost:.2f}")
 
         logger.info("[COST EST] Step 4: Finding missing docstrings...")
+        publish_progress(78, "Analyzing documentation debt")
         doc_issues = static_analyzer.find_missing_docstrings(repo_path)
         doc_cost = 0.0
         doc_rate = stack_rates.get("documentation", {}).get("rate", 55.10)
@@ -692,6 +817,7 @@ class CostEstimator:
         logger.info(f"[COST EST] Documentation: {len(doc_issues)} issues, ${doc_cost:.2f}")
 
         logger.info("[COST EST] Step 4b: Checking test debt...")
+        publish_progress(81, "Analyzing test debt")
         test_debt_items = TestDebtAnalyzer().find_test_gaps(repo_path, hotspot_files)
         test_debt_cost = 0.0
 
@@ -706,11 +832,13 @@ class CostEstimator:
         )
 
         logger.info("[COST EST] Step 5: Checking dependencies for vulnerabilities...")
+        publish_progress(84, "Checking dependency vulnerabilities")
         vuln_fetcher = VulnerabilityFetcher()
         dep_vulns = vuln_fetcher.check_dependencies_sync(repo_path)
         dep_cost = 0.0
 
         logger.info("[COST EST] Step 5a: Checking dependency hygiene...")
+        publish_progress(86, "Checking dependency hygiene")
         dependency_hygiene_items = DependencyDebtAnalyzer().analyze(repo_path, base_rate)
         dependency_hygiene_cost = 0.0
         for item in dependency_hygiene_items:
@@ -758,6 +886,8 @@ class CostEstimator:
             item["top_contributor_share"] = ownership.get("top_contributor_share")
             item["ownership_risk"] = ownership.get("ownership_risk")
             item["ownership_bus_factor"] = ownership.get("bus_factor")
+            item["top_author"] = ownership.get("top_author")
+            item["ownership_confidence"] = ownership.get("ownership_confidence")
 
         # --- Hybrid LLM estimation pass ---
         combined_multiplier = multipliers.get(
@@ -770,6 +900,7 @@ class CostEstimator:
             churn_data[rf.get("file", "")] = rf.get("change_count", 0)
 
         if self._hybrid_enabled and self.llm_estimator is not None:
+            publish_progress(88, "Running hybrid LLM effort estimates")
             logger.info(
                 "[COST EST] Running hybrid LLM estimation on %d items...",
                 len(debt_items),
@@ -781,6 +912,7 @@ class CostEstimator:
         else:
             logger.info("[COST EST] Hybrid estimation disabled — using formula only.")
 
+        publish_progress(90, "Aggregating findings and costs")
         function_count = complexity_results.get("total_functions", 0)
 
         baseline_hours = (FUNCTION_BASELINE_MINUTES / 60) * function_count
@@ -797,7 +929,14 @@ class CostEstimator:
         total_cost = total_cost_with_baseline * combined_multiplier
         logger.info(f"[COST EST] Total with baseline and multipliers: ${total_cost:.2f}")
 
-        debt_score = self.calculate_debt_score(total_cost, function_count, cisq_per_function)
+        files_scanned = complexity_results.get("total_files_scanned", 0)
+        # doc_issues scans all Python files (no limit), so its length is a reliable
+        # floor for the true function count when static analysis undersampled.
+        doc_function_floor = len(doc_issues)
+        debt_score = self.calculate_debt_score(
+            total_cost, function_count, cisq_per_function,
+            files_scanned=files_scanned, doc_function_floor=doc_function_floor,
+        )
         sanity = self.sanity_check(total_cost, function_count, cisq_per_function)
         cost_by_category = self._categorize_costs(debt_items)
         aggregated = FindingAggregator().aggregate(
@@ -811,6 +950,12 @@ class CostEstimator:
         total_hours = sum(item.get("remediation_hours", 0) for item in debt_items)
         total_hours = total_hours + baseline_hours * combined_multiplier
         total_sprints = total_hours / HOURS_PER_SPRINT
+
+        total_hours_by_level = {
+            "junior": round(sum(item.get("hours_by_level", {}).get("junior", item.get("remediation_hours", 0) * 2.0) for item in debt_items), 2),
+            "mid": round(total_hours, 2),
+            "senior": round(sum(item.get("hours_by_level", {}).get("senior", item.get("remediation_hours", 0) * 0.5) for item in debt_items), 2),
+        }
 
         # --- Estimation method metadata ---
         items_by_llm = sum(
@@ -837,6 +982,7 @@ class CostEstimator:
             "total_cost_usd": round(total_cost, 2),
             "total_remediation_hours": round(total_hours, 2),
             "total_remediation_sprints": round(total_sprints, 2),
+            "total_hours_by_level": total_hours_by_level,
             "cost_by_category": cost_by_category,
             "debt_score": debt_score,
             "sanity_check": sanity,

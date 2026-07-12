@@ -43,15 +43,19 @@ def test_status_unknown_job():
 
 def test_status_in_memory_job():
     """Test status for in-memory job."""
-    from main import jobs
+    from services.job_service import set_job
+
     test_job_id = "test-job-12345"
-    jobs[test_job_id] = {
-        "status": "queued",
-        "progress": 0,
-        "phase": "Queued",
-        "result": None,
-        "error": None,
-    }
+    set_job(
+        test_job_id,
+        {
+            "status": "queued",
+            "progress": 0,
+            "phase": "Queued",
+            "result": None,
+            "error": None,
+        },
+    )
     response = client.get(f"/status/{test_job_id}")
     assert response.status_code == 200
     assert response.json().get("status") == "queued"

@@ -1,0 +1,8 @@
+{
+  "junior": 26.35,
+  "mid": 37.64,
+  "senior": 56.46,
+  "source": "BLS API (series: CES0500000003)",
+  "fetched_at": "2026-07-11T22:25:05.293509",
+  "used_fallback": false
+}

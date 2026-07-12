@@ -53,7 +53,7 @@ class SecurityCostAgent:
 
         if self._search_count < self._max_searches:
             try:
-                from duckduckgo_search import DDGS
+                from ddgs import DDGS
 
                 query = "IBM cost data breach report 2025 average total cost"
                 
@@ -85,7 +85,7 @@ class SecurityCostAgent:
                     live = True
 
             except Exception as e:
-                logger.warning(f"Breach cost search failed: {e}")
+                logger.warning(f"Breach cost search failed: {e}", exc_info=True)
 
         result = {
             "average_breach_cost": breach_cost,
@@ -118,7 +118,7 @@ class SecurityCostAgent:
 
         if self._search_count < self._max_searches:
             try:
-                from duckduckgo_search import DDGS
+                from ddgs import DDGS
 
                 query = "Verizon DBIR 2025 breach probability percentage statistics"
 
@@ -149,7 +149,7 @@ class SecurityCostAgent:
                     live = True
 
             except Exception as e:
-                logger.warning(f"DBIR search failed: {e}")
+                logger.warning(f"DBIR search failed: {e}", exc_info=True)
 
         result = {
             "base_breach_probability": base_rate,

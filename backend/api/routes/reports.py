@@ -1,7 +1,6 @@
 """Report routes."""
 
 import logging
-from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
@@ -15,13 +14,6 @@ from services.report_service import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["reports"])
-_jobs_ref: dict[str, Any] = {}
-
-
-def set_jobs_reference(jobs: dict[str, Any]) -> None:
-    """Provide access to the in-memory jobs registry used by main.py."""
-    global _jobs_ref
-    _jobs_ref = jobs
 
 
 @router.get("/report/{job_id}/pdf")
@@ -29,7 +21,7 @@ async def download_pdf_report(job_id: str):
     """Generate and download a PDF report for a completed analysis job."""
     db = SessionLocal()
     try:
-        result = ensure_complete_result(job_id, get_result_payload(job_id, _jobs_ref, db))
+        result = ensure_complete_result(job_id, get_result_payload(job_id, db))
         return build_pdf_response(job_id, result)
     except HTTPException:
         raise

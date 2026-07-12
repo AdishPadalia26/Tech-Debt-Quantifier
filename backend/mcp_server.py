@@ -156,11 +156,12 @@ def _run_clone_attempt(
     git_config_args: list[str] | None = None,
 ) -> dict[str, Any]:
     """Run one git clone attempt and capture either the process result or timeout."""
+    clone_depth = int(os.getenv("GIT_CLONE_DEPTH", "500"))
     command = [
         "git",
         *(git_config_args or []),
         "clone",
-        "--depth=1",
+        f"--depth={clone_depth}",
         "--single-branch",
         *(extra_args or []),
         git_url,

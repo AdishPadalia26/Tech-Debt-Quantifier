@@ -1,7 +1,5 @@
 """Optional integration routes."""
 
-from typing import Any
-
 from fastapi import APIRouter, HTTPException
 
 from database.connection import SessionLocal
@@ -10,16 +8,9 @@ from integrations.slack_notifier import SlackNotifier
 from services.report_service import ensure_complete_result, get_result_payload
 
 router = APIRouter(tags=["integrations"])
-_jobs_ref: dict[str, Any] = {}
 
 slack_notifier = SlackNotifier()
 jira_client = JiraClient()
-
-
-def set_jobs_reference(jobs: dict[str, Any]) -> None:
-    """Provide access to the in-memory jobs registry used by main.py."""
-    global _jobs_ref
-    _jobs_ref = jobs
 
 
 @router.get("/integrations/status")
@@ -44,7 +35,7 @@ async def send_to_slack(job_id: str, channel: str | None = None):
     """Send an analysis summary to Slack if configured."""
     db = SessionLocal()
     try:
-        result = ensure_complete_result(job_id, get_result_payload(job_id, _jobs_ref, db))
+        result = ensure_complete_result(job_id, get_result_payload(job_id, db))
     finally:
         db.close()
 
@@ -62,7 +53,7 @@ async def create_jira_tickets(
 ):
     db = SessionLocal()
     try:
-        payload = get_result_payload(job_id, _jobs_ref, db)
+        payload = get_result_payload(job_id, db)
     finally:
         db.close()
 

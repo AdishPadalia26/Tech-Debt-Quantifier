@@ -3,24 +3,164 @@
 from __future__ import annotations
 
 import logging
+import os
+import subprocess
 from collections import Counter, defaultdict
-from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
-
-from pydriller import Repository
 
 from constants import SKIP_DIRS
 
 logger = logging.getLogger(__name__)
 
+# Extensions considered source code for ownership purposes.
+# Files outside this set (docs, assets, config, lock files) are excluded so
+# changelog and CI churn don't dominate bus-factor / hotspot calculations.
+_SOURCE_EXTENSIONS: frozenset[str] = frozenset({
+    ".py", ".js", ".ts", ".tsx", ".jsx",
+    ".java", ".go", ".rs", ".cpp", ".c", ".cc", ".cxx", ".h", ".hpp",
+    ".cs", ".rb", ".php", ".swift", ".kt", ".scala", ".lua",
+    ".ex", ".exs", ".clj", ".cljs",
+    ".vue", ".svelte",
+    ".sh", ".bash",
+    ".ipynb",
+    ".sql",
+})
+
 
 class OwnershipAnalyzer:
     """Analyze contributor concentration and ownership risk from git history."""
 
+    def _ensure_history_depth(self, repo_path: str, target_depth: int = 500) -> None:
+        """Deepen a shallow clone so ownership analysis has enough commit history."""
+        try:
+            result = subprocess.run(
+                ["git", "-C", repo_path, "rev-list", "--count", "HEAD"],
+                capture_output=True, text=True, timeout=10,
+            )
+            current_depth = int(result.stdout.strip()) if result.returncode == 0 else 0
+            if current_depth >= target_depth:
+                return
+            shallow_file = Path(repo_path) / ".git" / "shallow"
+            if not shallow_file.exists():
+                return
+            deepen_by = max(target_depth - current_depth, 100)
+            subprocess.run(
+                ["git", "-C", repo_path, "fetch", f"--deepen={deepen_by}"],
+                capture_output=True, text=True, timeout=120,
+            )
+        except Exception as exc:
+            logger.debug("Could not deepen repo history for %s: %s", repo_path, exc)
+
+    def _git_unique_emails(self, repo_path: str, since_days: int | None = None) -> set[str]:
+        """Return unique author emails via git shortlog (fast, full-history scan)."""
+        try:
+            cmd = ["git", "-C", repo_path, "shortlog", "-sne", "--no-merges"]
+            if since_days is not None:
+                cmd.append(f"--since={since_days} days ago")
+            cmd.append("HEAD")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60, encoding="utf-8", errors="replace")
+            if result.returncode != 0:
+                return set()
+            emails: set[str] = set()
+            for line in result.stdout.splitlines():
+                if "<" in line and ">" in line:
+                    email = line[line.rfind("<") + 1 : line.rfind(">")].strip().lower()
+                    if email:
+                        emails.add(email)
+            return emails
+        except Exception as exc:
+            logger.debug("git shortlog failed for %s: %s", repo_path, exc)
+            return set()
+
+    def _iter_git_history(
+        self, repo_path: str, max_commits: int
+    ) -> tuple[
+        dict[str, Counter[str]],
+        dict[str, Counter[str]],
+        Counter[str],
+        dict[str, str | None],
+        dict[str, str],
+        int,
+    ]:
+        """Return ownership counters using fast git-log output."""
+        delimiter = "\x1f"
+        cmd = [
+            "git",
+            "-C",
+            repo_path,
+            "log",
+            "--no-merges",
+            f"-n{max_commits}",
+            f"--format={delimiter}%ae%x00%an%x00%aI",
+            "--name-only",
+        ]
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            encoding="utf-8",
+            errors="replace",
+        )
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or "git log failed")
+
+        file_counts: dict[str, Counter[str]] = defaultdict(Counter)
+        module_counts: dict[str, Counter[str]] = defaultdict(Counter)
+        repo_counts: Counter[str] = Counter()
+        file_last_changed: dict[str, str | None] = {}
+        author_names: dict[str, str] = {}
+        commits_seen = 0
+
+        for block in result.stdout.split(delimiter):
+            block = block.strip()
+            if not block:
+                continue
+
+            lines = [line.strip() for line in block.splitlines() if line.strip()]
+            if not lines:
+                continue
+
+            header = lines[0].split("\x00")
+            if len(header) < 3:
+                continue
+
+            author_email = header[0].strip().lower()
+            author_name = header[1].strip()
+            author_date = header[2].strip()
+            if not author_email:
+                continue
+
+            commits_seen += 1
+            if author_name and author_email not in author_names:
+                author_names[author_email] = author_name
+            repo_counts[author_email] += 1
+
+            touched_files: set[str] = set()
+            for file_path in lines[1:]:
+                if self._should_skip_file(file_path):
+                    continue
+                normalized = self._normalize_repo_path(file_path)
+                touched_files.add(normalized)
+                file_counts[normalized][author_email] += 1
+                file_last_changed[normalized] = author_date
+
+            for normalized in touched_files:
+                module_counts[self._module_name(normalized)][author_email] += 1
+
+        return (
+            file_counts,
+            module_counts,
+            repo_counts,
+            file_last_changed,
+            author_names,
+            commits_seen,
+        )
+
     def _normalize_repo_path(self, file_path: str) -> str:
         """Normalize repository file paths across platforms."""
-        return str(Path(file_path).as_posix()).lstrip("./")
+        return str(Path(file_path).as_posix()).lstrip("/")
 
     def _module_name(self, file_path: str) -> str:
         """Return the module bucket for a normalized file path."""
@@ -29,8 +169,12 @@ class OwnershipAnalyzer:
 
     def _should_skip_file(self, file_path: str) -> bool:
         """Return whether a file path should be excluded from ownership analysis."""
-        path_parts = Path(file_path).parts
-        return any(skip_dir in path_parts for skip_dir in SKIP_DIRS)
+        path = Path(file_path)
+        if any(part in SKIP_DIRS for part in path.parts):
+            return True
+        # Only track source-code files; docs, assets, configs, and lock files
+        # have unrelated churn (e.g. CHANGES.rst) that distorts bus-factor.
+        return path.suffix.lower() not in _SOURCE_EXTENSIONS
 
     def _counter_share(self, counts: Counter[str]) -> float:
         """Return the top-contributor share for a counter."""
@@ -79,65 +223,41 @@ class OwnershipAnalyzer:
         repo_path: str,
         hotspot_files: list[str] | None = None,
         *,
-        max_commits: int = 250,
+        max_commits: int | None = None,
     ) -> dict[str, Any]:
         """Analyze repository ownership at repo, module, and file level."""
+        if max_commits is None:
+            max_commits = int(os.getenv("OWNERSHIP_MAX_COMMITS", "300"))
+
         hotspot_set = {
             self._normalize_repo_path(path)
             for path in (hotspot_files or [])
             if path
         }
 
-        file_counts: dict[str, Counter[str]] = defaultdict(Counter)
-        module_counts: dict[str, Counter[str]] = defaultdict(Counter)
-        repo_counts: Counter[str] = Counter()
-        file_last_changed: dict[str, str | None] = {}
-        active_contributors: set[str] = set()
-        commits_seen = 0
-        cutoff = datetime.now() - timedelta(days=90)
+        # Deepen shallow clones before counting contributors.
+        self._ensure_history_depth(repo_path)
+
+        # Accurate all-history contributor counts via git shortlog (fast, full-graph).
+        all_time_emails = self._git_unique_emails(repo_path)
+        active_90d_emails = self._git_unique_emails(repo_path, since_days=90)
 
         try:
-            repo = Repository(repo_path, num_workers=1)
-            for commit in repo.traverse_commits():
-                if commits_seen >= max_commits:
-                    break
-
-                author_email = (commit.author.email or "").strip().lower()
-                if not author_email:
-                    commits_seen += 1
-                    continue
-
-                repo_counts[author_email] += 1
-                commit_date = commit.author_date.replace(tzinfo=None)
-                if commit_date > cutoff:
-                    active_contributors.add(author_email)
-
-                touched_files: set[str] = set()
-                for modified_file in commit.modified_files:
-                    file_path = (
-                        modified_file.new_path
-                        or modified_file.old_path
-                        or modified_file.filename
-                    )
-                    if not file_path or self._should_skip_file(file_path):
-                        continue
-
-                    normalized = self._normalize_repo_path(file_path)
-                    touched_files.add(normalized)
-                    file_counts[normalized][author_email] += 1
-                    file_last_changed[normalized] = commit.author_date.isoformat()
-
-                for normalized in touched_files:
-                    module_counts[self._module_name(normalized)][author_email] += 1
-
-                commits_seen += 1
+            (
+                file_counts,
+                module_counts,
+                repo_counts,
+                file_last_changed,
+                author_names,
+                commits_seen,
+            ) = self._iter_git_history(repo_path, max_commits)
         except Exception as exc:
-            logger.warning("Ownership analysis failed for %s: %s", repo_path, exc)
+            logger.warning("Ownership analysis failed for %s: %s", repo_path, exc, exc_info=True)
             return {
                 "summary": {
                     "commit_sample_size": 0,
-                    "unique_contributors": 0,
-                    "active_contributors_90d": 0,
+                    "unique_contributors": len(all_time_emails),
+                    "active_contributors_90d": len(active_90d_emails),
                     "bus_factor": 0,
                     "top_contributor_share": 0.0,
                     "siloed_hotspots": 0,
@@ -162,12 +282,21 @@ class OwnershipAnalyzer:
                 top_contributor_share=top_share,
                 total_changes=total_changes,
             )
+            top_email = counts.most_common(1)[0][0] if counts else None
+            top_author = author_names.get(top_email or "", top_email or "unknown")
+            ownership_confidence = (
+                "high" if total_changes >= 5
+                else "medium" if total_changes >= 2
+                else "low"
+            )
             profile = {
                 "file_path": file_path,
                 "owner_count": owner_count,
+                "top_author": top_author,
                 "top_contributor_share": top_share,
                 "bus_factor": self._bus_factor(counts),
                 "ownership_risk": ownership_risk,
+                "ownership_confidence": ownership_confidence,
                 "total_changes": total_changes,
                 "last_changed": file_last_changed.get(file_path),
             }
@@ -201,8 +330,11 @@ class OwnershipAnalyzer:
         return {
             "summary": {
                 "commit_sample_size": commits_seen,
-                "unique_contributors": len(repo_counts),
-                "active_contributors_90d": len(active_contributors),
+                # Contributors seen in the sampled commits (same window as bus_factor).
+                "unique_contributors": len(repo_counts) or len(all_time_emails),
+                # All-time unique contributors across full available history.
+                "unique_contributors_all_time": len(all_time_emails),
+                "active_contributors_90d": len(active_90d_emails),
                 "bus_factor": self._bus_factor(repo_counts),
                 "top_contributor_share": self._counter_share(repo_counts),
                 "siloed_hotspots": siloed_hotspots,

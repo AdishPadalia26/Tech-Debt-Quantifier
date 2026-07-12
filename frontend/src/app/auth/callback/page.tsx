@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { clearToken, setToken } from "@/lib/api";
 
 export default function GithubCallback() {
   const router = useRouter();
@@ -11,25 +10,16 @@ export default function GithubCallback() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const hash = window.location.hash;
-    const params = new URLSearchParams(hash.replace(/^#/, ""));
     const queryParams = new URLSearchParams(window.location.search);
-    const token = params.get("token");
     const error = queryParams.get("error");
 
     if (error) {
-      clearToken();
       setMessage(`GitHub sign-in failed: ${decodeURIComponent(error)}`);
       return;
     }
 
-    if (token) {
-      setToken(token);
-      window.location.replace("/import");
-      return;
-    }
-    clearToken();
-    setMessage("GitHub sign-in did not return a valid session token.");
+    // Cookie is set by the backend redirect — just navigate.
+    window.location.replace("/import");
   }, [router]);
 
   return (

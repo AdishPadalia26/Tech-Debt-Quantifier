@@ -82,8 +82,8 @@ class ReportWriterAgent:
                             item.get("estimated_cost", finding.get("cost_usd", 0))
                         ),
                         "saves_per_month": float(
-                            item.get("saves_per_month", float(item.get("estimated_cost", 0)) * 0.0125
-                        ),
+                             item.get("saves_per_month", float(item.get("estimated_cost", 0)) * 0.0125)
+                         ),
                         "monthly_savings": float(
                             item.get("monthly_savings", float(item.get("estimated_cost", 0)) * 0.0125)
                         ),

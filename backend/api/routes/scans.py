@@ -19,6 +19,35 @@ from models.schemas import FindingFeedbackRequest, FindingSuppressionRequest
 router = APIRouter(tags=["scans"])
 
 
+@router.get("/scan/compare")
+async def compare_scan_endpoint(
+    base_scan_id: str,
+    target_scan_id: str,
+    user: User = Depends(get_current_user),
+):
+    """Compare two scans and return deltas in cost, score, and findings.
+
+    NOTE: This static route must be declared before ``/scan/{scan_id}`` so
+    FastAPI does not match ``/scan/compare`` as ``scan_id="compare"``.
+    """
+    if not DB_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available.")
+
+    db = SessionLocal()
+    try:
+        comparison = compare_scans(
+            db,
+            base_scan_id,
+            target_scan_id,
+            user_id=user.id,
+        )
+        if comparison is None:
+            raise HTTPException(404, "One or both scans not found")
+        return comparison
+    finally:
+        db.close()
+
+
 @router.get("/scan/{scan_id}")
 async def get_scan(
     scan_id: str, user: User | None = Depends(get_current_user_optional)
@@ -145,31 +174,6 @@ async def get_scan_roadmap_endpoint(
         if roadmap is None:
             raise HTTPException(404, "Scan not found")
         return {"scan_id": scan_id, "roadmap": roadmap}
-    finally:
-        db.close()
-
-
-@router.get("/scan/compare")
-async def compare_scan_endpoint(
-    base_scan_id: str,
-    target_scan_id: str,
-    user: User = Depends(get_current_user),
-):
-    """Compare two scans and return deltas in cost, score, and findings."""
-    if not DB_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Database not available.")
-
-    db = SessionLocal()
-    try:
-        comparison = compare_scans(
-            db,
-            base_scan_id,
-            target_scan_id,
-            user_id=user.id,
-        )
-        if comparison is None:
-            raise HTTPException(404, "One or both scans not found")
-        return comparison
     finally:
         db.close()
 

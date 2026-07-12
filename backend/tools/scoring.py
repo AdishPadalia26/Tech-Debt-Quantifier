@@ -1,11 +1,14 @@
 """Shared scoring helpers for technical debt analysis."""
 
+import math
 from typing import Any
 
 from constants import (
     BUSINESS_IMPACT_WEIGHTS,
     CONFIDENCE_DEFAULTS,
+    DEBT_SCORE_LOG_SLOPE,
     DEBT_SCORE_MAX,
+    DEBT_SCORE_MIDPOINT,
     SEVERITY_RANK,
 )
 
@@ -72,12 +75,34 @@ def aggregate_repo_score(
     total_cost: float,
     function_count: int,
     cisq_per_function: float,
+    files_scanned: int = 0,
+    doc_function_floor: int = 0,
 ) -> float:
-    """Aggregate cost into the public 0-10 debt score."""
-    if function_count <= 0 or cisq_per_function <= 0:
+    """Aggregate cost into a 0-10 debt health grade (higher = more debt).
+
+    The score is a log-scaled comparison of the repo's debt density against the
+    industry-average benchmark, anchored so that a repo at the industry-average
+    density scores ``DEBT_SCORE_MIDPOINT`` and every 10x change in density moves
+    the score by ``DEBT_SCORE_LOG_SLOPE`` points. Log scaling stretches the
+    crowded "healthy repo" band (well below the industry average) across 1-4
+    instead of compressing every well-run codebase into 0-1, which is what a
+    linear (density / benchmark) * 10 mapping did.
+
+    Density is cost per function. The denominator must match the scope of the
+    cost numerator, so we normalize against the sampled ``function_count`` only;
+    full-repo proxies (``files_scanned * 5`` or the all-files docstring count)
+    are retained in the signature for compatibility but no longer widen the
+    denominator, since doing so diluted density and suppressed large-repo scores.
+    """
+    if cisq_per_function <= 0:
         return 0.0
-    cost_per_function = total_cost / function_count
-    return round(min(DEBT_SCORE_MAX, (cost_per_function / cisq_per_function) * 10), 2)
+    effective_count = max(function_count, 1)
+    cost_per_function = total_cost / effective_count
+    if cost_per_function <= 0:
+        return 0.0
+    density_ratio = cost_per_function / cisq_per_function
+    score = DEBT_SCORE_MIDPOINT + DEBT_SCORE_LOG_SLOPE * math.log10(density_ratio)
+    return round(max(0.0, min(DEBT_SCORE_MAX, score)), 2)
 
 
 def build_finding_payload(

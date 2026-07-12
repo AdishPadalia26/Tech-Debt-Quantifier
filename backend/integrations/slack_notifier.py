@@ -245,8 +245,7 @@ class SlackNotifier:
                     "emoji": True
                 },
                 "url": (
-                    f"http://localhost:8000/report/"
-                    f"{job_id}/pdf"
+                    f"{os.getenv('PUBLIC_BASE_URL', 'http://localhost:8000')}/report/{job_id}/pdf"
                 ) if job_id else repo,
                 "style": "primary",
             }

@@ -195,7 +195,7 @@ class RepoProfiler:
                     deps[match] = ""
 
         except Exception as e:
-            logger.debug(f"Error parsing {file_path}: {e}")
+            logger.debug(f"Error parsing {file_path}: {e}", exc_info=True)
 
         return deps
 
@@ -274,7 +274,7 @@ class RepoProfiler:
             }
             
         except Exception as e:
-            logger.error(f"Team profiling failed: {e}")
+            logger.error(f"Team profiling failed: {e}", exc_info=True)
             import traceback
             logger.error(traceback.format_exc())
             return self._default_team_profile()
@@ -345,7 +345,7 @@ class RepoProfiler:
                     tech, rate, detail = future.result()
                     all_rates[tech.lower()] = {"rate": rate, "detail": detail}
                 except Exception as e:
-                    logger.warning(f"Rate search failed: {e}")
+                    logger.warning(f"Rate search failed: {e}", exc_info=True)
 
         base_rate = all_rates.get(primary_lang.lower(), {}).get("rate", 84.55)
 
@@ -545,7 +545,7 @@ class RepoProfiler:
                     total_lines += fc["added_lines"]
 
         except Exception as e:
-            logger.warning(f"AI detection error: {e}")
+            logger.warning(f"AI detection error: {e}", exc_info=True)
 
         suspected_files.sort(key=lambda x: x["probability"], reverse=True)
 

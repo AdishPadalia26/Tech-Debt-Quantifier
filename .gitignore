@@ -44,7 +44,12 @@ Thumbs.db
 # Temp / repos cloned during analysis
 /backend/tmp/
 /backend/repos/
+/backend/.cache/
+/backend/.pytest_tmp_cases/
 /tmp/
+
+# Stray Windows reserved-name file (accidental `> nul` redirect)
+nul
 
 # Test artifacts
 /backend/test.db

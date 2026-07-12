@@ -1,0 +1,2449 @@
+{
+  "rules": {
+    "pythonsecurity:S8702": {
+      "minutes": 30,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S8703": {
+      "minutes": 30,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S8704": {
+      "minutes": 30,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S8705": {
+      "minutes": 30,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S8701": {
+      "minutes": 30,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S7518": {
+      "minutes": 30,
+      "severity": "MINOR",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S8706": {
+      "minutes": 30,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S8707": {
+      "minutes": 30,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S5976": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5852": {
+      "minutes": 30,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S4502": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S1110": {
+      "minutes": 2,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S4507": {
+      "minutes": 1,
+      "severity": "MINOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S5958": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5778": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5542": {
+      "minutes": 20,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S8900": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S2245": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S8903": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S3330": {
+      "minutes": 10,
+      "severity": "MINOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S8904": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "python:S8905": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S8906": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S4790": {
+      "minutes": 30,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S1764": {
+      "minutes": 2,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S6249": {
+      "minutes": 10,
+      "severity": "MINOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S8786": {
+      "minutes": 20,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6252": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S6281": {
+      "minutes": 30,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S6304": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "python:S5332": {
+      "minutes": 30,
+      "severity": "MINOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S2077": {
+      "minutes": 20,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S8714": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6327": {
+      "minutes": 45,
+      "severity": "MINOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S6329": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "python:S5247": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S5144": {
+      "minutes": 30,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S1721": {
+      "minutes": 1,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S2734": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S2737": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S8392": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "python:S8397": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "CODE_SMELL"
+    },
+    "python:S3752": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S8411": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S8508": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S6333": {
+      "minutes": 15,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "python:S5122": {
+      "minutes": 240,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "pythonenterprise:S7698": {
+      "minutes": 15,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "pythonenterprise:S7693": {
+      "minutes": 45,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S3649": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S6350": {
+      "minutes": 30,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S6985": {
+      "minutes": 15,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S4426": {
+      "minutes": 2,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S2257": {
+      "minutes": 480,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S2612": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S1313": {
+      "minutes": 30,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S4828": {
+      "minutes": 30,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S8685": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S6265": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "python:S6275": {
+      "minutes": 30,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S6270": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "python:S8572": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5042": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S8554": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S8490": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S8492": {
+      "minutes": 2,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S8493": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S2068": {
+      "minutes": 30,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S6303": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S6302": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "python:S6308": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S6319": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S5443": {
+      "minutes": 30,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S6418": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "python:S8409": {
+      "minutes": 2,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S8520": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6463": {
+      "minutes": 60,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S8410": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S8505": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S8507": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S8500": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S8502": {
+      "minutes": 2,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S8503": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S8509": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S8515": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S8516": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S8518": {
+      "minutes": 2,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S8511": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S8512": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S8513": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S8514": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S8519": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6330": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S6332": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S8510": {
+      "minutes": 2,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S2092": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S6863": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S8494": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S8495": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S8521": {
+      "minutes": 1,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S8504": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S8517": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S2712": {
+      "minutes": 15,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "pythonarchitecture:S8487": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "pythonarchitecture:S8483": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "pythonarchitecture:S8484": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "pythonenterprise:S7713": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "CODE_SMELL"
+    },
+    "pythonenterprise:S7616": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "CODE_SMELL"
+    },
+    "pythonenterprise:S7675": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "CODE_SMELL"
+    },
+    "pythonenterprise:S7710": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "pythonenterprise:S7191": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "pythonenterprise:S7192": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "pythonenterprise:S7193": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "pythonenterprise:S8486": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "pythonenterprise:S7695": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "pythonenterprise:S8443": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "pythonenterprise:S7195": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "pythonenterprise:S7470": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "pythonenterprise:S7471": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "pythonenterprise:S7196": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "pythonenterprise:S8440": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "pythonenterprise:S8438": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "pythonenterprise:S7702": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "pythonenterprise:S8439": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "pythonenterprise:S7703": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "pythonenterprise:S7704": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "pythonenterprise:S8434": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "pythonenterprise:S8435": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "pythonenterprise:S7468": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "pythonenterprise:S7469": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "pythonenterprise:S8437": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "pythonenterprise:S7706": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "pythonenterprise:S7708": {
+      "minutes": 20,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "pythonenterprise:S7181": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "pythonenterprise:S7182": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "pythonenterprise:S7187": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "pythonenterprise:S7189": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6984": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "python:S8396": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "pythonsecurity:S6547": {
+      "minutes": 30,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S6549": {
+      "minutes": 30,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S5135": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S5334": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S5131": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S5496": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S2083": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S6287": {
+      "minutes": 30,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S6680": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S2631": {
+      "minutes": 60,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S2078": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S5146": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S5145": {
+      "minutes": 30,
+      "severity": "MINOR",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S2076": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S6776": {
+      "minutes": 30,
+      "severity": "MINOR",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S5147": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S6639": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S6839": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S7044": {
+      "minutes": 30,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S6096": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S2091": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "pythonarchitecture:S8464": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S1135": {
+      "minutes": 0,
+      "severity": "INFO",
+      "type": "CODE_SMELL"
+    },
+    "python:S1134": {
+      "minutes": 0,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6709": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6262": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S2115": {
+      "minutes": 45,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "python:S6711": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5864": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6714": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S1144": {
+      "minutes": 2,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S7488": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S7489": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S5860": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S1143": {
+      "minutes": 30,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "python:S3329": {
+      "minutes": 15,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S5747": {
+      "minutes": 10,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S6396": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S7484": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S7486": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S7487": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:ExecStatementUsage": {
+      "minutes": 10,
+      "severity": "BLOCKER",
+      "type": "CODE_SMELL"
+    },
+    "python:S7483": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S3776": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S2201": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S5713": {
+      "minutes": 1,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5712": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S6246": {
+      "minutes": 180,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6928": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S5719": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S6929": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S2208": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S6925": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5714": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S5717": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S6243": {
+      "minutes": 20,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5843": {
+      "minutes": 8,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5722": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S5724": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S5845": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "python:InequalityUsage": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S1244": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S6377": {
+      "minutes": 15,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S5720": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S5607": {
+      "minutes": 20,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S5727": {
+      "minutes": 10,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S1481": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5655": {
+      "minutes": 20,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S5899": {
+      "minutes": 2,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6982": {
+      "minutes": 1,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6741": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6983": {
+      "minutes": 2,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6740": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6742": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S2823": {
+      "minutes": 1,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S5659": {
+      "minutes": 30,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S1854": {
+      "minutes": 1,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5890": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S2159": {
+      "minutes": 15,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S2710": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S5547": {
+      "minutes": 15,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S1186": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S2275": {
+      "minutes": 10,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S2836": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5549": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S2711": {
+      "minutes": 15,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S7608": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S7609": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S8375": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S5780": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5781": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S8371": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S3699": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S3457": {
+      "minutes": 1,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S4423": {
+      "minutes": 2,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S5754": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S6725": {
+      "minutes": 2,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S5756": {
+      "minutes": 20,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S7499": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S134": {
+      "minutes": 10,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S5632": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S7931": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S1716": {
+      "minutes": 10,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "python:S6727": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "python:S6969": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6729": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S7490": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S7496": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S7497": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S7498": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S7491": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S7492": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S7493": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S7494": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6734": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S7943": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S5644": {
+      "minutes": 20,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S5886": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S7945": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6978": {
+      "minutes": 1,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S6735": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S1045": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S6971": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "python:S6730": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6972": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6973": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S4433": {
+      "minutes": 15,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S7941": {
+      "minutes": 2,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S7942": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S6974": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S5642": {
+      "minutes": 20,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S6979": {
+      "minutes": 2,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5527": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S935": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S930": {
+      "minutes": 10,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S7514": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S6546": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S7515": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S7516": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S7517": {
+      "minutes": 1,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S7510": {
+      "minutes": 1,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6543": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6542": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S7511": {
+      "minutes": 1,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S7632": {
+      "minutes": 1,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6663": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S6785": {
+      "minutes": 480,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S7512": {
+      "minutes": 1,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6786": {
+      "minutes": 60,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S112": {
+      "minutes": 20,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6545": {
+      "minutes": 2,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S4487": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S7513": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S7519": {
+      "minutes": 1,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S905": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S6660": {
+      "minutes": 2,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6781": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "python:S6662": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S6540": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6661": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S107": {
+      "minutes": 20,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6437": {
+      "minutes": 60,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "python:S6799": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S1542": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6559": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6317": {
+      "minutes": 60,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S6554": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6795": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5344": {
+      "minutes": 30,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S6796": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5906": {
+      "minutes": 1,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5905": {
+      "minutes": 1,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S2638": {
+      "minutes": 15,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S2755": {
+      "minutes": 15,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "python:S2876": {
+      "minutes": 10,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S6792": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6552": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S116": {
+      "minutes": 2,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6794": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S117": {
+      "minutes": 2,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6887": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S5799": {
+      "minutes": 1,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S7613": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S7614": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S1871": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6883": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S5795": {
+      "minutes": 1,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5797": {
+      "minutes": 2,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S5796": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S1515": {
+      "minutes": 30,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S7617": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S7618": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S5439": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "python:S7619": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S1192": {
+      "minutes": 2,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S6882": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S8389": {
+      "minutes": 10,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "python:S8385": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S7503": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S7504": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S7625": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "python:S1763": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S6659": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S7505": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6538": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6779": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "python:S7506": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S6894": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S5685": {
+      "minutes": 10,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S7620": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S7500": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S7621": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5445": {
+      "minutes": 10,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S7501": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S101": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S7622": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S7502": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S7507": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S7508": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6890": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S2053": {
+      "minutes": 30,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S8405": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "CODE_SMELL"
+    },
+    "python:S6900": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S8401": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S6468": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S6908": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6903": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S8400": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S3403": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S6911": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S8412": {
+      "minutes": 2,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S8413": {
+      "minutes": 2,
+      "severity": "BLOCKER",
+      "type": "CODE_SMELL"
+    },
+    "python:S8414": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "CODE_SMELL"
+    },
+    "python:S8415": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5708": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S6918": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5828": {
+      "minutes": 1,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S5707": {
+      "minutes": 10,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "python:S6919": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5709": {
+      "minutes": 10,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S5704": {
+      "minutes": 30,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S5706": {
+      "minutes": 30,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6353": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6328": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S5918": {
+      "minutes": 2,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5915": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "python:S5914": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6321": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S3985": {
+      "minutes": 2,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S4830": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S3862": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S3984": {
+      "minutes": 2,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S2772": {
+      "minutes": 2,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5807": {
+      "minutes": 1,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S5806": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S3626": {
+      "minutes": 1,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6331": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:NoSonar": {
+      "minutes": 1,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S8370": {
+      "minutes": 30,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S8374": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S6965": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "pythonarchitecture:S7789": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "pythonarchitecture:S7788": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "pythonarchitecture:S8134": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:FunctionComplexity": {
+      "minutes": 10,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S138": {
+      "minutes": 20,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S104": {
+      "minutes": 60,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S1172": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S1309": {
+      "minutes": 10,
+      "severity": "INFO",
+      "type": "CODE_SMELL"
+    },
+    "pythonbugs:S3518": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "python:S2733": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S5953": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:PreIncrementDecrement": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S1128": {
+      "minutes": 1,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S3923": {
+      "minutes": 15,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S3801": {
+      "minutes": 20,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S1717": {
+      "minutes": 2,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:LongIntegerWithLowercaseSuffixUsage": {
+      "minutes": 2,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S1720": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S1845": {
+      "minutes": 10,
+      "severity": "BLOCKER",
+      "type": "CODE_SMELL"
+    },
+    "python:S1656": {
+      "minutes": 3,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S6553": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6556": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S2757": {
+      "minutes": 2,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:ClassComplexity": {
+      "minutes": 10,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S1751": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S6537": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:FileComplexity": {
+      "minutes": 30,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S3827": {
+      "minutes": 10,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "python:S1451": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "CODE_SMELL"
+    },
+    "python:S3516": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "CODE_SMELL"
+    },
+    "python:S1226": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "BUG"
+    },
+    "python:S2761": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6560": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S3981": {
+      "minutes": 2,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:BackticksUsage": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "CODE_SMELL"
+    },
+    "python:S2190": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "pythonbugs:S5633": {
+      "minutes": 20,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "pythonbugs:S6899": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "pythonbugs:S6886": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "pythonbugs:S2589": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "pythonbugs:S6417": {
+      "minutes": 15,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "pythonbugs:S6466": {
+      "minutes": 10,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "pythonbugs:S2259": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "pythonbugs:S2583": {
+      "minutes": 15,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S139": {
+      "minutes": 1,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "pythonbugs:S6465": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "pythonbugs:S6464": {
+      "minutes": 20,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "python:S1131": {
+      "minutes": 1,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S1066": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S125": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S113": {
+      "minutes": 1,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5856": {
+      "minutes": 15,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "python:S5855": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S5850": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S5857": {
+      "minutes": 3,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S1940": {
+      "minutes": 2,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S1142": {
+      "minutes": 20,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5869": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5868": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S1700": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6395": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6035": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6397": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S2325": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6002": {
+      "minutes": 20,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "python:S6001": {
+      "minutes": 10,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "python:S6019": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5842": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "BUG"
+    },
+    "python:S5603": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S3358": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S1862": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S5996": {
+      "minutes": 10,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "python:S5994": {
+      "minutes": 15,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "python:S1707": {
+      "minutes": 2,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S1607": {
+      "minutes": 2,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S1722": {
+      "minutes": 2,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:ParsingError": {
+      "minutes": 30,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:LineLength": {
+      "minutes": 1,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S108": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:PrintStatementUsage": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S100": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S1578": {
+      "minutes": 10,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:OneStatementPerLine": {
+      "minutes": 1,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6326": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6323": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S4144": {
+      "minutes": 15,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S4143": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S5361": {
+      "minutes": 2,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    }
+  },
+  "source": "SonarCloud API",
+  "api_url_index": 1,
+  "fetched_at": "2026-07-11T22:26:12.731674",
+  "used_fallback": false,
+  "count": 488
+}

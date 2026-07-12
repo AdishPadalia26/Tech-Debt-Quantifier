@@ -118,10 +118,19 @@ def save_scan(
 
     db.add(scan)
     db.flush()
+    assert scan.id, "scan.id is None after flush — Scan insert failed"
+
+    _DEBT_ITEM_CAP = 500
+    _FINDING_CAP = 500
 
     # Save individual debt items for trend analysis
     debt_items = analysis.get("debt_items", [])
-    for item in debt_items[:100]:  # cap at 100 items per scan
+    if len(debt_items) > _DEBT_ITEM_CAP:
+        logger.warning(
+            "Truncated debt_items %d -> %d for scan %s",
+            len(debt_items), _DEBT_ITEM_CAP, scan.id,
+        )
+    for item in debt_items[:_DEBT_ITEM_CAP]:
         db.add(
             DebtItem(
                 scan_id=scan.id,
@@ -137,7 +146,12 @@ def save_scan(
         )
 
     findings = analysis.get("findings", [])
-    for finding in findings[:250]:
+    if len(findings) > _FINDING_CAP:
+        logger.warning(
+            "Truncated findings %d -> %d for scan %s",
+            len(findings), _FINDING_CAP, scan.id,
+        )
+    for finding in findings[:_FINDING_CAP]:
         db.add(
             Finding(
                 scan_id=scan.id,

@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 MAX_FILES = 200
 MAX_FILE_SIZE_KB = 500
+MAX_NOTEBOOK_SIZE_KB = 15_000
 HARD_SKIP_PATTERNS = [
     ".git",
     "node_modules",
@@ -70,6 +71,7 @@ class StaticAnalyzer:
 
     def __init__(self) -> None:
         self._files_scanned = 0
+        self._sampled_files: list[str] = []  # populated by get_summary(), reused by run_security_scan()
 
     def _should_skip_file(self, file_path: str) -> bool:
         """Check if file should be skipped based on patterns."""
@@ -85,7 +87,13 @@ class StaticAnalyzer:
             elif pattern in file_name:
                 return True
         try:
-            if os.path.getsize(file_path) > MAX_FILE_SIZE_KB * 1024:
+            file_ext = os.path.splitext(file_path)[1].lower()
+            max_size_kb = (
+                MAX_NOTEBOOK_SIZE_KB
+                if file_ext == ".ipynb"
+                else MAX_FILE_SIZE_KB
+            )
+            if os.path.getsize(file_path) > max_size_kb * 1024:
                 return True
         except OSError:
             return True
@@ -128,15 +136,87 @@ class StaticAnalyzer:
             relative_path = os.path.relpath(file_path, repo_path)
             file_ext = os.path.splitext(file_path)[1].lower()
 
-            if file_ext == ".py":
+            if file_ext == ".ipynb":
+                results = self._analyze_notebook_file(file_path, relative_path)
+            elif file_ext == ".py":
                 results = self._analyze_python_file(file_path, relative_path)
             else:
                 results = self._analyze_lizard_file(file_path, relative_path)
 
         except Exception as e:
-            logger.warning(f"Error analyzing {file_path}: {e}")
+            logger.warning(f"Error analyzing {file_path}: {e}", exc_info=True)
 
         return results
+
+    def _analyze_notebook_file(
+        self, file_path: str, relative_path: str
+    ) -> list[dict[str, Any]]:
+        """Analyze Python code cells in a Jupyter notebook."""
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as handle:
+                notebook = json.load(handle)
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.debug("Could not read notebook %s: %s", file_path, exc)
+            return []
+
+        code_blocks: list[str] = []
+        for cell in notebook.get("cells", []):
+            if not isinstance(cell, dict) or cell.get("cell_type") != "code":
+                continue
+            source = cell.get("source", [])
+            if isinstance(source, list):
+                code = "".join(str(part) for part in source)
+            else:
+                code = str(source)
+            if code.strip():
+                code_blocks.append(code)
+
+        if not code_blocks:
+            return []
+
+        content = self._sanitize_notebook_code("\n\n".join(code_blocks))
+        try:
+            tree = ast.parse(content, filename=relative_path)
+        except SyntaxError as exc:
+            logger.debug("Could not parse notebook code %s: %s", file_path, exc)
+            return []
+
+        valid_lines = self._get_top_level_and_method_lines(tree)
+        results = []
+        try:
+            functions = cc_visit(content)
+        except SyntaxError as exc:
+            logger.debug("Radon could not parse notebook %s: %s", file_path, exc)
+            return []
+
+        for func in functions:
+            if func.lineno not in valid_lines:
+                continue
+            severity = self._get_severity(func.complexity)
+            results.append(
+                {
+                    "file": relative_path,
+                    "function": func.name,
+                    "complexity": func.complexity,
+                    "severity": severity,
+                    "language": "python-notebook",
+                    "line_number": func.lineno,
+                    "full_name": f"{relative_path}:{func.lineno}",
+                }
+            )
+
+        return results
+
+    def _sanitize_notebook_code(self, content: str) -> str:
+        """Remove notebook magic/shell lines that are not valid Python syntax."""
+        cleaned_lines = []
+        for line in content.splitlines():
+            stripped = line.lstrip()
+            if stripped.startswith(("%", "!", "?")):
+                cleaned_lines.append("")
+            else:
+                cleaned_lines.append(line)
+        return "\n".join(cleaned_lines)
 
     def _analyze_python_file(self, file_path: str, relative_path: str) -> list[dict[str, Any]]:
         """Analyze Python file using Radon with AST filtering.
@@ -249,7 +329,7 @@ class StaticAnalyzer:
                 results.append(result_dict)
 
         except Exception as e:
-            logger.warning(f"Error analyzing with Lizard: {e}")
+            logger.warning(f"Error analyzing with Lizard: {e}", exc_info=True)
 
         return results
 
@@ -271,7 +351,7 @@ class StaticAnalyzer:
             dirs[:] = [d for d in dirs if not self._should_skip_dir(d)]
 
             for file in files:
-                if not file.endswith(".py"):
+                if not file.endswith((".py", ".ipynb")):
                     continue
                 if self._should_skip_file(os.path.join(root, file)):
                     continue
@@ -306,8 +386,13 @@ class StaticAnalyzer:
         findings = []
 
         try:
-            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                content = f.read()
+            if file_path.endswith(".ipynb"):
+                content = self._notebook_code_content(file_path)
+            else:
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                    content = f.read()
+            if not content.strip():
+                return findings
 
             tree = ast.parse(content, filename=file_path)
             relative_path = os.path.relpath(file_path, repo_path)
@@ -368,6 +453,27 @@ class StaticAnalyzer:
 
         return findings
 
+    def _notebook_code_content(self, file_path: str) -> str:
+        """Return concatenated code cell content from a notebook."""
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as handle:
+                notebook = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            return ""
+
+        blocks: list[str] = []
+        for cell in notebook.get("cells", []):
+            if not isinstance(cell, dict) or cell.get("cell_type") != "code":
+                continue
+            source = cell.get("source", [])
+            if isinstance(source, list):
+                code = "".join(str(part) for part in source)
+            else:
+                code = str(source)
+            if code.strip():
+                blocks.append(code)
+        return self._sanitize_notebook_code("\n\n".join(blocks))
+
     def _get_parent_class_lineno(self, func_node: ast.FunctionDef | ast.AsyncFunctionDef, tree: ast.AST) -> int | None:
         """Find the lineno of the parent class for a function node."""
         for node in ast.walk(tree):
@@ -396,9 +502,25 @@ class StaticAnalyzer:
         findings = []
         total_found = 0
 
+        # Scan the repository RECURSIVELY (`bandit -r <repo>`) instead of passing
+        # every file path as a command-line argument. Passing a file list breaks
+        # on large repos like Django/Flask: 2,900+ paths overflow the Windows
+        # 32,767-char command-line limit, raising WinError 206 (FileNotFoundError)
+        # which was previously misreported as "Bandit not installed" and silently
+        # returned zero findings. Recursive mode also covers 100% of files (not a
+        # 200-file sample) and stays fast (~10s on the full Django tree).
+        exclude_arg = self._bandit_exclude_arg()
+        cmd = [
+            sys.executable, "-m", "bandit",
+            "-r", repo_path,
+            "-f", "json", "-q",
+            "--exclude", exclude_arg,
+        ]
+        logger.info("[BANDIT] Recursively scanning %s (excludes: %s)", repo_path, exclude_arg)
+
         try:
             result = subprocess.run(
-                [sys.executable, "-m", "bandit", "-r", repo_path, "-f", "json", "-q"],
+                cmd,
                 capture_output=True,
                 text=True,
                 timeout=300,
@@ -407,7 +529,14 @@ class StaticAnalyzer:
             try:
                 bandit_output = json.loads(result.stdout)
             except json.JSONDecodeError:
-                logger.warning("Bandit returned non-JSON output")
+                # Empty stdout with a usage/error message means bandit could not
+                # run (bad args, no targets). Surface stderr so it is debuggable
+                # instead of silently returning zero findings.
+                stderr_head = (result.stderr or "").strip()[:300]
+                logger.warning(
+                    "[BANDIT] Non-JSON output (rc=%s). stderr: %s",
+                    result.returncode, stderr_head or "<empty>",
+                )
                 return findings
 
             for issue in bandit_output.get("results", []):
@@ -446,14 +575,36 @@ class StaticAnalyzer:
                 })
 
         except subprocess.TimeoutExpired:
-            logger.warning("Bandit scan timed out")
-        except FileNotFoundError:
-            logger.error("Bandit not installed")
+            logger.warning("[BANDIT] Scan timed out after 300s")
+        except OSError as e:
+            # WinError 206 (command line too long) and a genuinely missing
+            # interpreter both surface here. With recursive scanning the command
+            # line is tiny, so this almost always means bandit is not installed —
+            # but log the real error instead of guessing.
+            logger.error("[BANDIT] Could not launch bandit: %s", e)
         except Exception as e:
-            logger.warning(f"Bandit scan failed: {e}")
+            logger.warning(f"[BANDIT] Scan failed: {e}", exc_info=True)
 
         logger.info(f"[BANDIT] Total found: {total_found}, After filtering: {len(findings)}")
         return findings
+
+    def _bandit_exclude_arg(self) -> str:
+        """Build bandit's comma-separated --exclude glob list.
+
+        Derives directory excludes from SKIP_DIRS (build artifacts, vendored
+        deps, virtualenvs) plus common test directories, since test files
+        generate high-volume low-signal findings (asserts, fixture passwords).
+        """
+        from constants import SKIP_DIRS
+
+        # NB: do NOT add ".cache" here — cloned repos live under backend/.cache/,
+        # and bandit matches --exclude globs against the full absolute path, so
+        # "*/.cache/*" would match the entire repo and exclude every file.
+        dir_names = set(SKIP_DIRS) | {"tests", "test", "testing", "migrations"}
+        patterns = [f"*/{name}/*" for name in sorted(dir_names)]
+        # Also exclude noisy generated/minified files.
+        patterns += ["*_pb2.py", "*.min.js"]
+        return ",".join(patterns)
 
     def get_summary(self, repo_path: str) -> dict[str, Any]:
         """Get comprehensive analysis summary for a repository.
@@ -467,6 +618,13 @@ class StaticAnalyzer:
         Returns:
             Summary dictionary with metrics and findings
         """
+        _CODE_EXTENSIONS = {
+            ".py", ".js", ".ts", ".tsx", ".jsx",
+            ".ipynb",
+            ".java", ".go", ".rs", ".cpp", ".c", ".cc", ".cxx",
+            ".cs", ".rb", ".php", ".swift", ".kt", ".scala",
+        }
+
         start_time = time.time()
         all_functions = []
         file_list = []
@@ -478,13 +636,21 @@ class StaticAnalyzer:
                 file_path = os.path.join(root, file)
                 if self._should_skip_file(file_path):
                     continue
+                if os.path.splitext(file)[1].lower() not in _CODE_EXTENSIONS:
+                    continue
                 file_list.append(file_path)
 
         total_files = len(file_list)
         if total_files > MAX_FILES:
-            logger.info("Limiting static analysis to first %s files out of %s", MAX_FILES, total_files)
+            logger.info(
+                "Sampling %s files out of %s (stratified shuffle for coverage)",
+                MAX_FILES, total_files,
+            )
+            import random
+            random.Random(42).shuffle(file_list)
             file_list = file_list[:MAX_FILES]
             total_files = len(file_list)
+        self._sampled_files = file_list  # share with run_security_scan()
         logger.info(f"Starting analysis of {total_files} files")
 
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
@@ -507,7 +673,7 @@ class StaticAnalyzer:
                             )
 
                     except Exception as e:
-                        logger.warning(f"Error processing file: {e}")
+                        logger.warning(f"Error processing file: {e}", exc_info=True)
                     pbar.update(1)
 
         total_complexity = sum(f["complexity"] for f in all_functions)

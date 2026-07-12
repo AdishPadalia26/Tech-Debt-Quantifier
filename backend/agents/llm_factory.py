@@ -1,6 +1,6 @@
 """LLM factory for Tech Debt Quantifier.
 
-Supports Ollama, HuggingFace API, local HuggingFace models, and OpenAI.
+Supports Groq, NVIDIA NIM, Ollama, HuggingFace API, local HuggingFace models, and OpenAI.
 """
 
 import logging
@@ -17,9 +17,13 @@ def get_llm(task: str = "default") -> BaseLLM:
     Args:
         task: "summary" | "json" | "default"
     """
-    provider = os.getenv("LLM_PROVIDER", "huggingface_api")
+    provider = os.getenv("LLM_PROVIDER", "groq")
 
-    if provider == "ollama":
+    if provider == "groq":
+        return _get_groq_llm(task)
+    elif provider == "nvidia_nim":
+        return _get_nvidia_nim_llm(task)
+    elif provider == "ollama":
         return _get_ollama_llm(task)
     elif provider == "huggingface_api":
         return _get_hf_api_llm(task)
@@ -28,8 +32,8 @@ def get_llm(task: str = "default") -> BaseLLM:
     elif provider == "openai":
         return _get_openai_llm()
     else:
-        logger.warning(f"Unknown provider {provider}, using Ollama")
-        return _get_ollama_llm(task)
+        logger.warning(f"Unknown provider {provider}, falling back to Groq")
+        return _get_groq_llm(task)
 
 
 def _get_ollama_llm(task: str) -> BaseLLM:
@@ -47,6 +51,43 @@ def _get_ollama_llm(task: str) -> BaseLLM:
         api_key=os.getenv("OLLAMA_API_KEY", "ollama"),
         base_url=base_url,
         timeout=timeout_seconds,
+    )
+
+
+def _get_groq_llm(task: str) -> BaseLLM:
+    """Groq Inference API — fast, free tier available."""
+    from langchain_groq import ChatGroq
+
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        logger.warning("GROQ_API_KEY not set, falling back to NVIDIA NIM")
+        return _get_nvidia_nim_llm(task)
+
+    model_id = os.getenv("GROQ_MODEL_ID", "llama-3.3-70b-versatile")
+    logger.info("Using Groq: %s (api_key set: %s)", model_id, bool(api_key))
+    return ChatGroq(
+        model=model_id,
+        temperature=0.1,
+        api_key=api_key,
+    )
+
+
+def _get_nvidia_nim_llm(task: str) -> BaseLLM:
+    """NVIDIA NIM Inference API — OpenAI-compatible, free tier available."""
+    from langchain_openai import ChatOpenAI
+
+    api_key = os.getenv("NVIDIA_NIM_API_KEY")
+    if not api_key:
+        logger.warning("NVIDIA_NIM_API_KEY not set, falling back to OpenAI")
+        return _get_openai_llm()
+
+    model_id = os.getenv("NIM_MODEL_ID", "meta/llama-3.1-8b-instruct")
+    logger.info(f"Using NVIDIA NIM: {model_id}")
+    return ChatOpenAI(
+        model=model_id,
+        temperature=0.1,
+        api_key=api_key,
+        base_url="https://integrate.api.nvidia.com/v1",
     )
 
 

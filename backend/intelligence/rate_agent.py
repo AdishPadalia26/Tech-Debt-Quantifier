@@ -91,7 +91,7 @@ class RateIntelligenceAgent:
             return result
             
         except Exception as e:
-            logger.warning(f"BLS fetch failed: {e}")
+            logger.warning(f"BLS fetch failed: {e}", exc_info=True)
             return self._bls_fallback()
 
     def _bls_fallback(self) -> dict[str, Any]:
@@ -122,7 +122,7 @@ class RateIntelligenceAgent:
 
         try:
             url = "https://www.levels.fyi/js/salaryData.json"
-            with httpx.Client(timeout=30) as client:
+            with httpx.Client(timeout=5) as client:
                 response = client.get(url)
                 response.raise_for_status()
                 salaries = response.json()
@@ -160,7 +160,7 @@ class RateIntelligenceAgent:
             return result
 
         except Exception as e:
-            logger.warning(f"Levels.fyi fetch failed: {e}")
+            logger.warning(f"Levels.fyi fetch failed: {e}", exc_info=True)
             fallback = self._levels_fallback(technology)
             self._cache.set(cache_key, "levels_fyi", fallback)
             return fallback
@@ -196,7 +196,7 @@ class RateIntelligenceAgent:
         try:
             url = "https://survey.stackoverflow.co/datasets/stack-overflow-developer-survey-2024.zip"
             
-            with httpx.Client(timeout=60) as client:
+            with httpx.Client(timeout=10) as client:
                 response = client.get(url)
                 response.raise_for_status()
                 
@@ -253,7 +253,7 @@ class RateIntelligenceAgent:
             return result
 
         except Exception as e:
-            logger.warning(f"Stack Overflow fetch failed: {e}")
+            logger.warning(f"Stack Overflow fetch failed: {e}", exc_info=True)
             fallback = self._stackoverflow_fallback()
             self._cache.set(cache_key, "stackoverflow", fallback)
             return fallback
@@ -290,7 +290,7 @@ class RateIntelligenceAgent:
                 return cached
 
         try:
-            from duckduckgo_search import DDGS
+            from ddgs import DDGS
             
             query = f"{technology} engineer average hourly rate salary 2025"
             
@@ -348,7 +348,7 @@ class RateIntelligenceAgent:
             return result
 
         except Exception as e:
-            logger.warning(f"DuckDuckGo search failed: {e}")
+            logger.warning(f"DuckDuckGo search failed: {e}", exc_info=True)
             return self._ddg_fallback(technology)
 
     def _ddg_fallback(self, technology: str) -> dict[str, Any]:
@@ -377,7 +377,17 @@ class RateIntelligenceAgent:
         total_weight = 0.0
         live_count = 0
 
-        bls = self.fetch_bls_rate()
+        # Fetch all four sources concurrently instead of sequentially.
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            f_bls    = ex.submit(self.fetch_bls_rate)
+            f_levels = ex.submit(self.fetch_levels_fyi, technology)
+            f_so     = ex.submit(self.fetch_stackoverflow_rates)
+            f_ddg    = ex.submit(self.search_ddg_salary, technology)
+            bls    = f_bls.result()
+            levels = f_levels.result()
+            so     = f_so.result()
+            ddg    = f_ddg.result()
+
         sources["bls"] = {
             "rate": bls.get(role, FALLBACK_RATES[role]),
             "weight": WEIGHTS["bls"],
@@ -387,7 +397,6 @@ class RateIntelligenceAgent:
             live_count += 1
             total_weight += WEIGHTS["bls"]
 
-        levels = self.fetch_levels_fyi(technology)
         sources["levels"] = {
             "rate": levels.get(role, FALLBACK_RATES[role]),
             "weight": WEIGHTS["levels"],
@@ -397,7 +406,6 @@ class RateIntelligenceAgent:
             live_count += 1
             total_weight += WEIGHTS["levels"]
 
-        so = self.fetch_stackoverflow_rates()
         sources["so"] = {
             "rate": so.get(role, FALLBACK_RATES[role]),
             "weight": WEIGHTS["so"],
@@ -407,7 +415,6 @@ class RateIntelligenceAgent:
             live_count += 1
             total_weight += WEIGHTS["so"]
 
-        ddg = self.search_ddg_salary(technology)
         ddg_rate = ddg.get("rate", FALLBACK_RATES[role])
         if role == "junior":
             ddg_rate *= 0.8

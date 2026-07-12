@@ -1,4 +1,4 @@
-"""Git mining tools using PyDriller.
+"""Git mining tools using git log subprocess.
 
 Analyzes git history to find code hotspots and risky files.
 Combines complexity analysis with change frequency to identify high-risk areas.
@@ -6,12 +6,10 @@ Combines complexity analysis with change frequency to identify high-risk areas.
 
 import logging
 import os
+import subprocess
 from collections import defaultdict
-from datetime import datetime
 from pathlib import Path
 from typing import Any
-
-from pydriller import Repository
 
 from constants import CHURN_MULTIPLIERS, DEBT_TYPE_TO_ROLE, SKIP_DIRS
 from tools.scoring import (
@@ -25,12 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 class GitMiner:
-    """Analyzes git history to find code hotspots and risky files.
-    
-    Uses PyDriller to mine commit history and identify files that are
-    frequently changed (hotspots). These files often have higher
-    defect rates and maintenance costs.
-    """
+    """Analyzes git history to find code hotspots and risky files."""
 
     def __init__(self) -> None:
         self._hotspots_cache: dict[str, list[dict[str, Any]]] = {}
@@ -48,11 +41,14 @@ class GitMiner:
         self, repo_path: str, max_commits: int = 50
     ) -> list[dict[str, Any]]:
         """Find files with the most commits (code hotspots).
-        
+
+        Uses git log --name-only to get file lists per commit without loading
+        diffs or fetching blobs — safe for blobless/partial clones of large repos.
+
         Args:
             repo_path: Path to the git repository
             max_commits: Maximum number of commits to analyze
-            
+
         Returns:
             List of hotspot files sorted by change count (descending)
         """
@@ -66,42 +62,67 @@ class GitMiner:
         )
 
         try:
-            repo = Repository(repo_path, num_workers=1)
-            commit_count = 0
+            delimiter = "\x1f"
+            cmd = [
+                "git", "-C", repo_path,
+                "log", "--no-merges", f"-n{max_commits}",
+                f"--format={delimiter}%ae%x00%aI",
+                "--name-only",
+            ]
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if result.returncode != 0:
+                logger.warning("git log failed for %s: %s", repo_path, result.stderr.strip())
+                return []
 
-            for commit in repo.traverse_commits():
-                if commit_count >= max_commits:
-                    break
+            for block in result.stdout.split(delimiter):
+                block = block.strip()
+                if not block:
+                    continue
+                lines = [ln.strip() for ln in block.splitlines() if ln.strip()]
+                if not lines:
+                    continue
+                header = lines[0].split("\x00")
+                if len(header) < 2:
+                    continue
+                author_email = header[0].strip().lower()
+                author_date = header[1].strip()
 
-                for modified_file in commit.modified_files:
-                    file_path = modified_file.new_path or modified_file.old_path or modified_file.filename
-                    if not file_path or self._should_skip_file(file_path):
+                for file_path in lines[1:]:
+                    if self._should_skip_file(file_path):
                         continue
-                    file_path = self._normalize_repo_path(file_path)
+                    normalized = self._normalize_repo_path(file_path)
+                    file_stats[normalized]["change_count"] += 1
+                    file_stats[normalized]["authors"].add(author_email)
+                    if file_stats[normalized]["last_changed"] is None:
+                        file_stats[normalized]["last_changed"] = author_date
 
-                    file_stats[file_path]["change_count"] += 1
-                    file_stats[file_path]["authors"].add(commit.author.email)
-                    file_stats[file_path]["last_changed"] = commit.author_date.isoformat()
-
-                commit_count += 1
-
+        except subprocess.TimeoutExpired:
+            logger.warning("git log timed out for %s", repo_path)
+            return []
         except Exception as e:
-            logger.warning(f"Error mining git history: {e}")
+            logger.warning("Error mining git history: %s", e, exc_info=True)
             return []
 
-        hotspots = []
-        for file_path, stats in file_stats.items():
-            hotspots.append({
+        hotspots = [
+            {
                 "file": file_path,
                 "change_count": stats["change_count"],
                 "unique_authors": len(stats["authors"]),
                 "last_changed": stats["last_changed"],
-            })
-
+            }
+            for file_path, stats in file_stats.items()
+        ]
         hotspots.sort(key=lambda x: x["change_count"], reverse=True)
         self._hotspots_cache[cache_key] = hotspots
 
-        logger.info(f"Found {len(hotspots)} hotspot files")
+        logger.info("Found %d hotspot files", len(hotspots))
         return hotspots
 
     def get_churn_multiplier(self, change_count: int) -> float:

@@ -68,6 +68,10 @@ class FindingAggregator:
                 )
             if item.get("ownership_risk") is not None:
                 finding["ownership_risk"] = str(item["ownership_risk"])
+            if item.get("top_author") is not None:
+                finding["top_author"] = str(item["top_author"])
+            if item.get("ownership_confidence") is not None:
+                finding["ownership_confidence"] = str(item["ownership_confidence"])
             findings.append(finding)
 
         findings.sort(
@@ -133,9 +137,11 @@ class FindingAggregator:
                 }
             )
         if item.get("owner_count") is not None:
+            top_author = item.get("top_author")
             ownership_summary = (
                 f"{item['owner_count']} contributors"
                 f", top contributor share {float(item.get('top_contributor_share', 0.0)):.0%}"
+                + (f", primary: {top_author}" if top_author else "")
             )
             evidence.append(
                 {

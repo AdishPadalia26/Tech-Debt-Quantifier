@@ -5,6 +5,7 @@ langgraph
 langchain-core
 langchain-openai
 langchain-huggingface
+langchain-groq
 langchain-mcp-adapters
 huggingface_hub
 transformers
@@ -36,7 +37,7 @@ tqdm
 PyJWT
 celery[redis]
 flower
-duckduckgo-search
+ddgs
 beautifulsoup4
 lxml
 slack-sdk

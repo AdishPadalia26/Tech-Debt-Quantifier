@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { GitBranch, LogOut, Plus } from "lucide-react";
 
-import { AUTH_CHANGED_EVENT, clearToken, getCurrentUser } from "@/lib/api";
+import { AUTH_CHANGED_EVENT, getCurrentUser, logout } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -43,12 +43,12 @@ export function HeaderAuth() {
 
   const handleLogin = () => {
     const apiUrl =
-      process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+      process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
     window.location.href = `${apiUrl}/auth/github/login`;
   };
 
-  const handleLogout = () => {
-    clearToken();
+  const handleLogout = async () => {
+    await logout();
     setUser(null);
     window.location.reload();
   };

@@ -8,7 +8,7 @@ from urllib.parse import urlencode
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from jose import JWTError, jwt
 
 from api.deps import JWT_ALG, JWT_SECRET, get_current_user
@@ -198,8 +198,17 @@ async def github_callback(
             "gh_token": access_token,
         }
         jwt_token = jwt.encode(token_payload, JWT_SECRET, algorithm=JWT_ALG)
-        redirect_url = f"{frontend_origin}/auth/callback#token={jwt_token}"
-        return RedirectResponse(redirect_url)
+        is_secure = not _auth_settings()["frontend_origin"].startswith("http://localhost")
+        response = RedirectResponse(f"{frontend_origin}/auth/callback")
+        response.set_cookie(
+            key="tdq_token",
+            value=jwt_token,
+            httponly=True,
+            secure=is_secure,
+            samesite="lax",
+            max_age=60 * 60 * 24 * 7,
+        )
+        return response
     except HTTPException as exc:
         return RedirectResponse(
             f"{frontend_origin}/auth/callback?error={str(exc.detail)}"
@@ -208,6 +217,14 @@ async def github_callback(
         return RedirectResponse(
             f"{frontend_origin}/auth/callback?error=github_auth_failed"
         )
+
+
+@router.post("/auth/logout")
+async def logout() -> JSONResponse:
+    """Clear the auth cookie and end the session."""
+    response = JSONResponse({"ok": True})
+    response.delete_cookie("tdq_token", httponly=True, samesite="lax")
+    return response
 
 
 def _serialize_user(user: User) -> dict[str, str | int | None]:

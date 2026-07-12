@@ -1,6 +1,9 @@
 """Analyzer agent for Tech Debt Quantifier."""
 
+import asyncio
+
 from agents.state import AgentState
+from services.job_service import update_job
 from tools.cost_estimator import CostEstimator
 
 
@@ -20,7 +23,19 @@ class AnalyzerAgent:
 
             estimator = CostEstimator()
             repo_path_str = repo_path or ""
-            analysis = estimator.estimate_total_cost(repo_path_str, github_url)
+
+            def update_analysis_progress(progress: int, phase: str) -> None:
+                """Publish analyzer substep progress for the polling UI."""
+                job_id = state.get("job_id")
+                if job_id:
+                    update_job(job_id, progress=progress, phase=phase)
+
+            analysis = await asyncio.to_thread(
+                estimator.estimate_total_cost,
+                repo_path_str,
+                github_url,
+                update_analysis_progress,
+            )
 
             state["raw_analysis"] = analysis
             state["repo_profile"] = analysis.get("repo_profile", {})

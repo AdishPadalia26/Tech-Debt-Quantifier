@@ -1,11 +1,9 @@
 """Benchmark Agent - Dynamic industry benchmark fetching.
 
 Fetches current industry benchmarks from multiple sources:
-- CISQ cost of poor quality data
+- CISQ cost of poor quality data (scraped from secondary sources that publish the figure)
 - SonarQube project benchmarks
 - Language-specific debt metrics
-
-Uses DuckDuckGo for web search to find latest figures.
 """
 
 import logging
@@ -13,12 +11,32 @@ import re
 from datetime import datetime
 from typing import Any
 
+import httpx
+from bs4 import BeautifulSoup
+
 from core.cache_manager import get_cache
 
 logger = logging.getLogger(__name__)
 
 CISQ_FALLBACK = 433.0
-CISQ_YEAR = 2024
+CISQ_YEAR = 2022
+
+# Secondary sources that cite the CISQ per-function cost in plain HTML.
+# Ordered by reliability; first successful scrape wins.
+_CISQ_SCRAPE_URLS = [
+    "https://www.it-cisq.org/",
+    "https://www.castsoftware.com/glossary/cost-of-poor-quality-software",
+    "https://linearb.io/blog/technical-debt-cost",
+    "https://www.perforce.com/blog/pdx/cost-of-software-defects",
+]
+
+# Pattern: dollar amount followed by "per function" within ~60 chars
+_PER_FUNCTION_RE = re.compile(
+    r"\$\s*([\d,]+(?:\.\d+)?)\s*(?:per\s+function|/\s*function)",
+    re.IGNORECASE,
+)
+# Broader fallback: any dollar amount 50–50,000 within text that mentions "function"
+_DOLLAR_RE = re.compile(r"\$([\d,]+(?:\.\d+)?)")
 
 
 class BenchmarkAgent:
@@ -29,67 +47,80 @@ class BenchmarkAgent:
         self._search_count = 0
         self._max_searches = 10
 
+    def _scrape_cisq_from_secondary_sources(self) -> dict[str, Any] | None:
+        """Try curated secondary sources for the CISQ per-function cost figure."""
+        for url in _CISQ_SCRAPE_URLS:
+            try:
+                resp = httpx.get(
+                    url,
+                    timeout=4,
+                    follow_redirects=True,
+                    headers={"User-Agent": "Mozilla/5.0"},
+                )
+                if resp.status_code != 200:
+                    continue
+
+                text = BeautifulSoup(resp.text, "lxml").get_text(" ", strip=True)
+
+                # Best match: explicit "per function" dollar amount
+                m = _PER_FUNCTION_RE.search(text)
+                if m:
+                    value = float(m.group(1).replace(",", ""))
+                    if 50 <= value <= 50000:
+                        logger.info("CISQ per-function figure %.0f found at %s", value, url)
+                        return {
+                            "cost_per_function_usd": value,
+                            "source": f"CISQ via {url}",
+                            "year": datetime.now().year,
+                            "url": url,
+                            "live": True,
+                            "fetched_at": datetime.now().isoformat(),
+                        }
+
+                # Fallback: any dollar amount in range if "function" mentioned on page
+                if "function" in text.lower():
+                    for raw in _DOLLAR_RE.findall(text):
+                        value = float(raw.replace(",", ""))
+                        if 50 <= value <= 50000:
+                            logger.info(
+                                "CISQ-adjacent figure $%.0f found at %s", value, url
+                            )
+                            return {
+                                "cost_per_function_usd": value,
+                                "source": f"CISQ-adjacent via {url}",
+                                "year": datetime.now().year,
+                                "url": url,
+                                "live": True,
+                                "fetched_at": datetime.now().isoformat(),
+                            }
+
+            except Exception as exc:
+                logger.debug("CISQ scrape failed for %s: %s", url, exc, exc_info=True)
+
+        return None
+
     def get_cisq_benchmark(self) -> dict[str, Any]:
-        """Search for latest CISQ cost of poor quality figure.
-        
-        Returns:
-            Dict with CISQ benchmark data
+        """Fetch the latest CISQ cost-per-function figure.
+
+        Strategy: scrape curated secondary sources that publish this figure in
+        plain HTML. Only cache successful live results so the next analysis
+        always retries on failure.
         """
         cache_key = self._cache.make_key("cisq_benchmark")
 
+        # Only serve cache for successful live results — never cache fallback
         if self._cache.is_fresh(cache_key, "cisq_benchmarks"):
             cached = self._cache.get(cache_key, "cisq_benchmarks")
-            if cached:
+            if cached and cached.get("live"):
                 return cached
 
-        if self._search_count < self._max_searches:
-            try:
-                from duckduckgo_search import DDGS
+        result = self._scrape_cisq_from_secondary_sources()
+        if result:
+            self._cache.set(cache_key, "cisq_benchmarks", result)
+            return result
 
-                query = "CISQ cost poor software quality per function 2024 2025"
-                
-                with DDGS() as ddgs:
-                    results = list(ddgs.text(query, max_results=5))
-
-                self._search_count += 1
-
-                figures = []
-                sources = []
-
-                for r in results:
-                    snippet = r.get("body", "")
-                    sources.append(r.get("href", ""))
-
-                    matches = re.findall(r"\$[\d,]+(?:\.\d+)?", snippet)
-                    for match in matches:
-                        try:
-                            value = float(match.replace("$", "").replace(",", ""))
-                            if 100 <= value <= 10000:
-                                figures.append(value)
-                        except ValueError:
-                            continue
-
-                if figures:
-                    result = {
-                        "cost_per_function_usd": max(figures),
-                        "source": "CISQ via web search",
-                        "year": 2025,
-                        "url": sources[0] if sources else None,
-                        "live": True,
-                        "fetched_at": datetime.now().isoformat(),
-                    }
-                else:
-                    result = self._cisq_fallback()
-
-                self._cache.set(cache_key, "cisq_benchmarks", result)
-                return result
-
-            except Exception as e:
-                logger.warning(f"CISQ search failed: {e}")
-
-        result = self._cisq_fallback()
-        self._cache.set(cache_key, "cisq_benchmarks", result)
-        return result
+        logger.warning("All CISQ sources unavailable — using hardcoded fallback")
+        return self._cisq_fallback()
 
     def _cisq_fallback(self) -> dict[str, Any]:
         """Return CISQ fallback benchmark."""
@@ -119,7 +150,7 @@ class BenchmarkAgent:
 
         if self._search_count < self._max_searches:
             try:
-                from duckduckgo_search import DDGS
+                from ddgs import DDGS
 
                 query = f"SonarQube average technical debt {language} projects days benchmark"
 
@@ -169,7 +200,7 @@ class BenchmarkAgent:
                 return result
 
             except Exception as e:
-                logger.warning(f"SonarQube search failed: {e}")
+                logger.warning(f"SonarQube search failed: {e}", exc_info=True)
 
         return self._sonar_fallback(language)
 

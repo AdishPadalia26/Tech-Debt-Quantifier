@@ -63,6 +63,7 @@ export interface DebtReport {
   total_cost_usd?: number;
   total_remediation_hours?: number;
   total_remediation_sprints?: number;
+  total_hours_by_level?: { junior: number; mid: number; senior: number };
   debt_score?: number;
   cost_by_category?: Record<string, CostByCategory>;
   debt_items?: DebtItem[];
@@ -208,6 +209,8 @@ export interface StructuredFinding {
   owner_count?: number | null;
   top_contributor_share?: number | null;
   ownership_risk?: string | null;
+  top_author?: string | null;
+  ownership_confidence?: string | null;
 }
 
 export interface OwnershipSummary {

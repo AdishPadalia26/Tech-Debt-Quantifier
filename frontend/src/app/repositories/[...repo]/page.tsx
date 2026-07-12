@@ -102,28 +102,39 @@ export default function RepositoryDetailPage({ params }: Props) {
               <p className="text-gray-500 text-sm">{history.scans.length} scans</p>
             </div>
             <div className="space-y-3">
-              {history.scans.slice(0, 6).map((scan) => (
-                <div
-                  key={scan.scan_id}
-                  className="bg-gray-900/60 rounded-lg p-4 border border-gray-700 flex flex-wrap items-center justify-between gap-4"
-                >
-                  <div>
-                    <p className="text-white font-medium">{scan.date_display}</p>
-                    <p className="text-gray-500 text-sm">
-                      Score {scan.debt_score.toFixed(1)} · ${Math.round(scan.total_cost).toLocaleString()}
-                    </p>
+              {history.scans.slice(0, 6).map((scan, idx) => {
+                const nextScan = history.scans[idx + 1];
+                return (
+                  <div
+                    key={scan.scan_id}
+                    className="bg-gray-900/60 rounded-lg p-4 border border-gray-700 flex flex-wrap items-center justify-between gap-4"
+                  >
+                    <div>
+                      <p className="text-white font-medium">{scan.date_display}</p>
+                      <p className="text-gray-500 text-sm">
+                        Score {scan.debt_score.toFixed(1)} · ${Math.round(scan.total_cost).toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-4 text-sm">
+                      <span className="text-gray-400">{scan.total_hours.toFixed(1)}h</span>
+                      {nextScan && (
+                        <Link
+                          href={`/compare/${nextScan.scan_id}/${scan.scan_id}`}
+                          className="text-amber-400 hover:text-amber-300"
+                        >
+                          Compare with previous
+                        </Link>
+                      )}
+                      <Link
+                        href={`/scans/${scan.scan_id}`}
+                        className="text-purple-400 hover:text-purple-300"
+                      >
+                        Open scan
+                      </Link>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-4 text-sm">
-                    <span className="text-gray-400">{scan.total_hours.toFixed(1)}h</span>
-                    <Link
-                      href={`/scans/${scan.scan_id}`}
-                      className="text-purple-400 hover:text-purple-300"
-                    >
-                      Open scan
-                    </Link>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
