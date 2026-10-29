@@ -15,13 +15,48 @@ from langchain_core.messages import HumanMessage
 
 logger = logging.getLogger(__name__)
 
+ESTIMATION_SOURCE_LLM = "llm"
+ESTIMATION_SOURCE_FALLBACK = "fallback"
+
+# Errors that mean the LLM replied but the payload was unusable.
+_PARSE_ERRORS: tuple[type[BaseException], ...] = (
+    ValueError,
+    TypeError,
+    KeyError,
+    json.JSONDecodeError,
+)
+
+
+def _format_error(exc: BaseException) -> str:
+    """Return ``"<ExceptionClass>: <first 200 chars of message>"``."""
+    return f"{type(exc).__name__}: {str(exc)[:200]}"
+
+
+def _strip_reasoning(raw: str) -> str:
+    """Drop code fences and reasoning-model ``<think>`` output before JSON parsing.
+
+    Reasoning models (e.g. Nemotron) may omit the opening ``<think>`` tag, so
+    everything up to the last ``</think>`` is discarded; an unclosed trailing
+    ``<think>`` (truncated reasoning) is dropped too.
+    """
+    cleaned = re.sub(r"```(?:json)?", "", raw)
+    cleaned = cleaned.rsplit("</think>", 1)[-1]
+    cleaned = re.sub(r"<think>.*\Z", "", cleaned, flags=re.DOTALL)
+    return cleaned.strip()
+
 
 class LLMEstimator:
     """Uses the configured LLM (via llm_factory) to produce realistic effort
-    estimates for individual debt items."""
+    estimates for individual debt items.
+
+    Every returned estimate carries ``estimation_source`` ("llm" | "fallback");
+    fallback estimates also carry ``estimation_error``. The most recent error
+    (or None after a success) is kept on ``last_error``.
+    """
 
     def __init__(self, llm: BaseLLM) -> None:
         self.llm = llm
+        self.last_error: str | None = None
 
     def estimate_debt_item(
         self,
@@ -33,7 +68,13 @@ class LLMEstimator:
         function_name: str = "",
         language: str = "",
     ) -> dict[str, Any]:
-        """Ask the LLM to estimate realistic remediation effort."""
+        """Ask the LLM to estimate realistic remediation effort.
+
+        Returns:
+            Estimate dict with ``estimation_source`` "llm", or a formula
+            fallback with ``estimation_source`` "fallback" and
+            ``estimation_error`` when the LLM call or parsing fails.
+        """
         prompt = self._build_estimation_prompt(
             file_path, category, severity, description,
             code_snippet, function_name, language,
@@ -41,14 +82,30 @@ class LLMEstimator:
 
         try:
             response = self.llm.invoke([HumanMessage(content=prompt)])
-            raw = response.content if hasattr(response, "content") else str(response)
-            return self._parse_estimation_response(raw)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - provider SDKs raise many types
+            error = _format_error(e)
+            self.last_error = error
             logger.warning(
-                "LLM estimation failed for %s: %s. Falling back to formula defaults.",
-                file_path, e,
+                "LLM call failed for %s (%s). Falling back to formula defaults.",
+                file_path, error, exc_info=True,
             )
-            return self._fallback_estimates(category, severity)
+            return self._fallback_estimates(category, severity, error=error)
+
+        raw = response.content if hasattr(response, "content") else str(response)
+        try:
+            estimate = self._parse_estimation_response(raw)
+        except _PARSE_ERRORS as e:
+            error = _format_error(e)
+            self.last_error = error
+            logger.warning(
+                "Unparseable LLM estimate for %s (%s). Falling back to formula "
+                "defaults.",
+                file_path, error, exc_info=True,
+            )
+            return self._fallback_estimates(category, severity, error=error)
+
+        self.last_error = None
+        return estimate
 
     def _build_estimation_prompt(
         self,
@@ -95,8 +152,7 @@ Respond ONLY with valid JSON in this exact format:
 
     def _parse_estimation_response(self, raw: str) -> dict[str, Any]:
         """Extract a single JSON estimate object from an LLM response."""
-        cleaned = re.sub(r"```(?:json)?", "", raw).strip()
-        cleaned = re.sub(r"<think>.*?</think>", "", cleaned, flags=re.DOTALL).strip()
+        cleaned = _strip_reasoning(raw)
         match = re.search(r"\{.*\}", cleaned, re.DOTALL)
         if not match:
             raise ValueError("No JSON found in LLM response")
@@ -117,6 +173,7 @@ Respond ONLY with valid JSON in this exact format:
             "primary_risk": str(data.get("primary_risk", "")),
             "fix_summary": str(data.get("fix_summary", "")),
             "cost_rationale": str(data.get("cost_rationale", "")),
+            "estimation_source": ESTIMATION_SOURCE_LLM,
         }
 
     def estimate_debt_items_batch(
@@ -133,27 +190,89 @@ Respond ONLY with valid JSON in this exact format:
             return []
 
         prompt = self._build_batch_prompt(items)
+        batch_error: str | None = None
+        parsed: list[dict[str, Any] | None] = []
         try:
             response = self.llm.invoke([HumanMessage(content=prompt)])
-            raw = response.content if hasattr(response, "content") else str(response)
-            parsed = self._parse_batch_response(raw, len(items))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - provider SDKs raise many types
+            batch_error = _format_error(e)
             logger.warning(
-                "Batch LLM estimation failed for %d items: %s. Falling back to formula defaults.",
-                len(items), e,
+                "Batch LLM call failed for %d items (%s). Falling back to formula "
+                "defaults.",
+                len(items), batch_error, exc_info=True,
             )
-            parsed = [None] * len(items)
+        else:
+            raw = response.content if hasattr(response, "content") else str(response)
+            try:
+                parsed = self._parse_batch_response(raw, len(items))
+            except _PARSE_ERRORS as e:
+                batch_error = _format_error(e)
+                logger.warning(
+                    "Unparseable batch LLM response for %d items (%s). Falling "
+                    "back to formula defaults.",
+                    len(items), batch_error, exc_info=True,
+                )
 
         results: list[dict[str, Any]] = []
+        item_error: str | None = None
         for i, item in enumerate(items):
             est = parsed[i] if i < len(parsed) else None
             if est is None:
+                item_error = batch_error or (
+                    f"MissingEstimate: LLM returned no valid estimate for item {i + 1}"
+                    f" of {len(items)}"
+                )
                 est = self._fallback_estimates(
                     item.get("category", "code_quality"),
                     item.get("severity", "medium"),
+                    error=item_error,
                 )
             results.append(est)
+        self.last_error = batch_error or item_error
         return results
+
+    def estimate_debt_items_batch_strict(
+        self, items: list[dict[str, Any]]
+    ) -> list[dict[str, Any] | None]:
+        """Estimate a batch in ONE call, surfacing failures instead of hiding them.
+
+        Unlike ``estimate_debt_items_batch`` this never substitutes fallbacks:
+        the caller (``LLMPool``) decides how to retry/fail over.
+
+        Args:
+            items: Debt item input dicts (same shape as the non-strict method).
+
+        Returns:
+            One entry per input, in order: a normalized estimate, or None when
+            the LLM omitted or mangled that element.
+
+        Raises:
+            Exception: Whatever the provider SDK raises (rate limit, timeout,
+                HTTP error), or ``ValueError``/``json.JSONDecodeError`` when
+                the whole reply is unparseable.
+        """
+        if not items:
+            return []
+        response = self.llm.invoke(
+            [HumanMessage(content=self._build_batch_prompt(items))]
+        )
+        raw = response.content if hasattr(response, "content") else str(response)
+        if not isinstance(raw, str):
+            raw = str(raw)
+        parsed = self._parse_batch_response(raw, len(items))
+        padded: list[dict[str, Any] | None] = list(parsed[: len(items)])
+        padded.extend([None] * (len(items) - len(padded)))
+        # Routers (OpenRouter) may serve a different model than requested;
+        # report the one that actually answered.
+        metadata = getattr(response, "response_metadata", None)
+        used_model = None
+        if isinstance(metadata, dict):
+            used_model = metadata.get("model_name") or metadata.get("model")
+        if used_model:
+            for est in padded:
+                if est is not None:
+                    est["estimation_model"] = str(used_model)
+        return padded
 
     def _build_batch_prompt(self, items: list[dict[str, Any]]) -> str:
         """Build a single prompt asking for estimates of every item in the batch."""
@@ -198,8 +317,7 @@ Debt items:
         self, raw: str, expected: int
     ) -> list[dict[str, Any] | None]:
         """Extract a JSON array of estimates; per-element None on parse failure."""
-        cleaned = re.sub(r"```(?:json)?", "", raw).strip()
-        cleaned = re.sub(r"<think>.*?</think>", "", cleaned, flags=re.DOTALL).strip()
+        cleaned = _strip_reasoning(raw)
         match = re.search(r"\[.*\]", cleaned, re.DOTALL)
         if not match:
             raise ValueError("No JSON array found in batch response")
@@ -212,21 +330,35 @@ Debt items:
         for element in arr:
             try:
                 results.append(self._normalize_estimate(element))
-            except Exception:
+            except _PARSE_ERRORS:
+                logger.debug("Dropping malformed batch element", exc_info=True)
                 results.append(None)
         return results
 
     @staticmethod
-    def _fallback_estimates(category: str, severity: str) -> dict[str, Any]:
-        """Formula-only fallback when LLM is unavailable."""
+    def _fallback_estimates(
+        category: str, severity: str, error: str | None = None
+    ) -> dict[str, Any]:
+        """Formula-only fallback when LLM is unavailable.
+
+        Hours depend on category only; severity is NOT applied here (it is
+        applied once downstream by the cost formula). Severity still drives
+        ``severity_score`` / ``business_risk_score``.
+
+        Args:
+            category: Debt category.
+            severity: Debt severity (critical/high/medium/low).
+            error: Why the LLM estimate was unavailable, if known.
+
+        Returns:
+            Estimate dict with ``estimation_source`` "fallback" and
+            ``estimation_error`` (str; "LLM not configured" when unknown).
+        """
         base_hours: dict[str, float] = {
             "security": 4.0, "code_quality": 1.5, "documentation": 0.5,
             "test_debt": 2.0, "dependency": 1.0, "architecture": 3.0,
             "reliability": 2.0, "performance": 1.5, "duplication": 1.0,
             "dead_code": 0.5,
-        }
-        severity_mult: dict[str, float] = {
-            "critical": 2.0, "high": 1.5, "medium": 1.0, "low": 0.5,
         }
         severity_scores: dict[str, int] = {
             "critical": 9, "high": 7, "medium": 5, "low": 3,
@@ -237,9 +369,7 @@ Debt items:
 
         cat_key = (category or "code_quality").lower().replace(" ", "_")
         sev_key = (severity or "medium").lower()
-        base = base_hours.get(cat_key, 1.5)
-        sev_mult = severity_mult.get(sev_key, 1.0)
-        hours = base * sev_mult
+        hours = base_hours.get(cat_key, 1.5)
 
         return {
             "realistic_hours": hours,
@@ -249,7 +379,12 @@ Debt items:
             "confidence": "low",
             "primary_risk": f"Unresolved {category} debt may increase future costs.",
             "fix_summary": f"Standard {category} remediation required.",
-            "cost_rationale": f"Estimated using defaults: {hours:.1f}h for {cat_key} at {sev_key}.",
+            "cost_rationale": (
+                f"Estimated using category defaults: {hours:.1f}h for {cat_key} "
+                f"(severity {sev_key} applied downstream)."
+            ),
+            "estimation_source": ESTIMATION_SOURCE_FALLBACK,
+            "estimation_error": error or "LLM not configured",
         }
 
     def _fallback(self, category: str, severity: str) -> dict[str, Any]:
@@ -262,5 +397,9 @@ Debt items:
         """Public parse method for testing."""
         try:
             return self._parse_estimation_response(raw)
-        except Exception:
-            return self._fallback(category, severity)
+        except _PARSE_ERRORS as e:
+            result = self._fallback_estimates(
+                category, severity, error=_format_error(e)
+            )
+            result["source"] = "fallback"
+            return result

@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import httpx
 from fastapi import APIRouter
 
+from agents.llm_factory import get_llm_health
 from database.connection import DB_AVAILABLE
 from services.analysis_runner import ORCHESTRATOR_AVAILABLE
 from services.job_service import list_jobs as list_redis_jobs
@@ -75,4 +76,5 @@ async def detailed_health() -> dict[str, Any]:
             "DATABASE_URL": "set" if os.getenv("DATABASE_URL") else "missing",
         },
         "ollama": _get_ollama_health(),
+        "llm": get_llm_health(),
     }

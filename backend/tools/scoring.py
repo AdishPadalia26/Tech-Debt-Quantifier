@@ -55,6 +55,28 @@ def classify_business_impact(
     return "low"
 
 
+def cost_range_for(p50: float, confidence: float) -> dict[str, float]:
+    """Build a cost range around a point estimate from its confidence.
+
+    Lower confidence widens the range; the median (p50) never moves.
+    Width ``w = clamp(1 - confidence, 0.1, 0.75)``; ``p10 = p50 * (1 - w)``
+    and ``p90 = p50 * (1 + 2w)``.
+
+    Args:
+        p50: Point (median) cost estimate in USD.
+        confidence: Evidence confidence in 0..1.
+
+    Returns:
+        Dict with p10, p50 and p90 in USD.
+    """
+    width = max(0.1, min(0.75, 1.0 - confidence))
+    return {
+        "p10": round(p50 * (1.0 - width), 2),
+        "p50": round(p50, 2),
+        "p90": round(p50 * (1.0 + 2.0 * width), 2),
+    }
+
+
 def calculate_cost(
     *,
     effort_hours: float,
@@ -62,12 +84,17 @@ def calculate_cost(
     business_impact: str = "medium",
     confidence: float = 1.0,
 ) -> float:
-    """Calculate a confidence-adjusted engineering cost."""
+    """Calculate an engineering cost.
+
+    ``confidence`` does not change the cost (a low-confidence estimate is not a
+    cheaper one); it only widens the range via ``cost_range_for``. The
+    parameter is kept for call-site compatibility.
+    """
+    del confidence
     impact_weight = BUSINESS_IMPACT_WEIGHTS.get(
         business_impact.lower(), BUSINESS_IMPACT_WEIGHTS["medium"]
     )
-    bounded_confidence = max(0.25, min(confidence, 1.0))
-    return round(effort_hours * hourly_rate * impact_weight * bounded_confidence, 2)
+    return round(effort_hours * hourly_rate * impact_weight, 2)
 
 
 def aggregate_repo_score(
@@ -89,10 +116,9 @@ def aggregate_repo_score(
     linear (density / benchmark) * 10 mapping did.
 
     Density is cost per function. The denominator must match the scope of the
-    cost numerator, so we normalize against the sampled ``function_count`` only;
-    full-repo proxies (``files_scanned * 5`` or the all-files docstring count)
-    are retained in the signature for compatibility but no longer widen the
-    denominator, since doing so diluted density and suppressed large-repo scores.
+    cost numerator, so callers pass the full-repo function estimate
+    (``functions_estimated_total``). ``files_scanned`` and
+    ``doc_function_floor`` are retained for compatibility and unused.
     """
     if cisq_per_function <= 0:
         return 0.0
@@ -117,6 +143,11 @@ def build_finding_payload(
     extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Create a normalized finding payload used across analyzers."""
+    cost_usd = calculate_cost(
+        effort_hours=remediation_hours,
+        hourly_rate=hourly_rate,
+        business_impact=business_impact,
+    )
     payload: dict[str, Any] = {
         "file": file_path,
         "category": category,
@@ -124,12 +155,8 @@ def build_finding_payload(
         "remediation_hours": remediation_hours,
         "confidence": round(confidence, 2),
         "business_impact": business_impact,
-        "cost_usd": calculate_cost(
-            effort_hours=remediation_hours,
-            hourly_rate=hourly_rate,
-            business_impact=business_impact,
-            confidence=confidence,
-        ),
+        "cost_usd": cost_usd,
+        "cost_range": cost_range_for(cost_usd, confidence),
     }
     if extra:
         payload.update(extra)

@@ -8,6 +8,7 @@ import ast
 import json
 import logging
 import os
+import random
 import subprocess
 import sys
 import time
@@ -32,6 +33,13 @@ from constants import (
 logger = logging.getLogger(__name__)
 
 MAX_FILES = 200
+SAMPLE_SEED = 42
+# Upper bounds (bytes) of file-size strata: <2KB, 2-10KB, 10-50KB, >50KB
+SIZE_BUCKET_BOUNDS: tuple[tuple[int, str], ...] = (
+    (2 * 1024, "<2KB"),
+    (10 * 1024, "2-10KB"),
+    (50 * 1024, "10-50KB"),
+)
 MAX_FILE_SIZE_KB = 500
 MAX_NOTEBOOK_SIZE_KB = 15_000
 HARD_SKIP_PATTERNS = [
@@ -558,6 +566,10 @@ class StaticAnalyzer:
                 if not (is_high or is_medium_with_confidence):
                     continue  # Skip noise: LOW severity or LOW confidence
 
+                issue_cwe = issue.get("issue_cwe") or {}
+                cwe_num = issue_cwe.get("id") if isinstance(issue_cwe, dict) else None
+                cwe_id = f"CWE-{cwe_num}" if cwe_num else "CWE-UNKNOWN"
+
                 remediation_hours = BANDIT_REMEDIATION_HOURS.get(
                     severity, BANDIT_REMEDIATION_HOURS["LOW"]
                 )
@@ -568,6 +580,8 @@ class StaticAnalyzer:
                     "issue_text": issue.get("issue_text", ""),
                     "severity": severity,
                     "confidence": confidence,
+                    "issue_confidence": confidence,
+                    "cwe_id": cwe_id,
                     "bandit_test_id": test_id,
                     "remediation_hours": remediation_hours,
                     "category": "security",
@@ -606,11 +620,85 @@ class StaticAnalyzer:
         patterns += ["*_pb2.py", "*.min.js"]
         return ",".join(patterns)
 
+    @staticmethod
+    def _size_bucket(file_path: str) -> str:
+        """Return the size stratum label for a file."""
+        try:
+            size = os.path.getsize(file_path)
+        except OSError:
+            size = 0
+        for bound, label in SIZE_BUCKET_BOUNDS:
+            if size < bound:
+                return label
+        return ">50KB"
+
+    def _stratified_sample(
+        self, file_list: list[str], repo_path: str, max_files: int = MAX_FILES
+    ) -> list[str]:
+        """Deterministically sample files stratified by top-level dir and size.
+
+        Strata are (top-level directory, size bucket). ``max_files`` is
+        allocated proportionally to stratum size (largest-remainder method),
+        with at least one file per non-empty stratum. Files are drawn within
+        each stratum using ``random.Random(SAMPLE_SEED)``.
+
+        Args:
+            file_list: Eligible absolute file paths
+            repo_path: Repository root (for top-level dir resolution)
+            max_files: Sample size cap
+
+        Returns:
+            Sorted list of sampled file paths (all files if within cap)
+        """
+        if len(file_list) <= max_files:
+            return sorted(file_list)
+
+        strata: dict[tuple[str, str], list[str]] = {}
+        for fp in file_list:
+            rel_parts = Path(os.path.relpath(fp, repo_path)).parts
+            top = rel_parts[0] if len(rel_parts) > 1 else "."
+            strata.setdefault((top, self._size_bucket(fp)), []).append(fp)
+
+        keys = sorted(strata)
+        quotas: dict[tuple[str, str], int] = {}
+        if len(keys) >= max_files:
+            # More strata than slots: one file from each of the largest strata.
+            by_size = sorted(keys, key=lambda k: (-len(strata[k]), k))[:max_files]
+            quotas = {k: (1 if k in by_size else 0) for k in keys}
+        else:
+            quotas = {k: 1 for k in keys}
+            remaining = max_files - len(keys)
+            capacity = {k: len(strata[k]) - 1 for k in keys}
+            total_capacity = sum(capacity.values())
+            if total_capacity > 0 and remaining > 0:
+                exact = {k: remaining * capacity[k] / total_capacity for k in keys}
+                floors = {k: int(exact[k]) for k in keys}
+                for k in keys:
+                    quotas[k] += floors[k]
+                leftover = remaining - sum(floors.values())
+                by_remainder = sorted(keys, key=lambda k: (-(exact[k] - floors[k]), k))
+                for k in by_remainder:
+                    if leftover <= 0:
+                        break
+                    if quotas[k] < len(strata[k]):
+                        quotas[k] += 1
+                        leftover -= 1
+
+        rng = random.Random(SAMPLE_SEED)
+        sampled: list[str] = []
+        for k in keys:
+            members = sorted(strata[k])
+            rng.shuffle(members)
+            sampled.extend(members[: quotas[k]])
+        return sorted(sampled)
+
     def get_summary(self, repo_path: str) -> dict[str, Any]:
         """Get comprehensive analysis summary for a repository.
         
-        Scans all files in parallel using ThreadPoolExecutor.
-        Shows progress bar with tqdm.
+        Scans eligible files in parallel using ThreadPoolExecutor. Repos with
+        more than MAX_FILES eligible files are stratified-sampled; the summary
+        reports ``files_eligible``, ``files_sampled``, ``sample_ratio`` and
+        ``functions_estimated_total`` (sampled functions / sample_ratio).
         
         Args:
             repo_path: Path to repository
@@ -640,16 +728,16 @@ class StaticAnalyzer:
                     continue
                 file_list.append(file_path)
 
+        files_eligible = len(file_list)
+        file_list = self._stratified_sample(file_list, repo_path, MAX_FILES)
         total_files = len(file_list)
-        if total_files > MAX_FILES:
+        sample_ratio = total_files / files_eligible if files_eligible else 1.0
+        if total_files < files_eligible:
             logger.info(
-                "Sampling %s files out of %s (stratified shuffle for coverage)",
-                MAX_FILES, total_files,
+                "Sampling %s of %s eligible files (stratified by top-level dir "
+                "and size bucket, seed=%s, ratio=%.3f)",
+                total_files, files_eligible, SAMPLE_SEED, sample_ratio,
             )
-            import random
-            random.Random(42).shuffle(file_list)
-            file_list = file_list[:MAX_FILES]
-            total_files = len(file_list)
         self._sampled_files = file_list  # share with run_security_scan()
         logger.info(f"Starting analysis of {total_files} files")
 
@@ -676,6 +764,12 @@ class StaticAnalyzer:
                         logger.warning(f"Error processing file: {e}", exc_info=True)
                     pbar.update(1)
 
+        all_functions.sort(
+            key=lambda f: (f["file"], f.get("line_number") or 0, f["function"])
+        )
+        functions_estimated_total = (
+            round(len(all_functions) / sample_ratio) if sample_ratio > 0 else 0
+        )
         total_complexity = sum(f["complexity"] for f in all_functions)
         avg_complexity = total_complexity / len(all_functions) if all_functions else 0
 
@@ -714,6 +808,10 @@ class StaticAnalyzer:
             "high_risk_functions": high_risk,
             "scan_duration_seconds": round(duration, 2),
             "all_functions": all_functions,
+            "files_eligible": files_eligible,
+            "files_sampled": total_files,
+            "sample_ratio": round(sample_ratio, 4),
+            "functions_estimated_total": functions_estimated_total,
         }
 
         logger.info(

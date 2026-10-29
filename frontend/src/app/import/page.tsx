@@ -142,66 +142,66 @@ export default function ImportReposPage() {
   };
 
   return (
-    <main className="min-h-screen bg-gray-950 px-6 py-12 text-white">
+    <div className="w-full min-w-0">
       <div className="mx-auto max-w-6xl space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="mb-1 text-sm uppercase tracking-wider text-gray-500">
+            <p className="mb-1 text-sm uppercase tracking-wider text-muted-foreground">
               GitHub Import
             </p>
-            <h1 className="text-3xl font-bold text-white">Import Repositories</h1>
-            <p className="mt-2 text-gray-400">
+            <h1 className="text-3xl font-bold text-foreground">Import Repositories</h1>
+            <p className="mt-2 text-muted-foreground">
               Bring personal or organization repositories into Tech Debt Quantifier without copying URLs manually.
             </p>
           </div>
           <div className="flex gap-3">
-            <Link href="/" className="text-sm text-gray-400 hover:text-white">
+            <Link href="/" className="text-sm text-muted-foreground hover:text-foreground">
               Back to Scanner
             </Link>
-            <Link href="/portfolio" className="text-sm text-purple-400 hover:text-purple-300">
+            <Link href="/portfolio" className="text-sm text-primary hover:text-accent-foreground">
               Go to Portfolio
             </Link>
           </div>
         </div>
 
         {!signedIn && !loading ? (
-          <div className="rounded-xl border border-gray-800 bg-gray-900 p-8">
+          <div className="rounded-xl border border-border bg-card p-8">
             <div className="mx-auto max-w-2xl space-y-4 text-center">
-              <div className="mx-auto flex size-12 items-center justify-center rounded-full border border-gray-800 bg-gray-950">
-                <LockKeyhole className="size-5 text-cyan-400" />
+              <div className="mx-auto flex size-12 items-center justify-center rounded-full border border-border bg-background">
+                <LockKeyhole className="size-5 text-primary" />
               </div>
               <div>
-                <h2 className="text-2xl font-semibold text-white">Connect GitHub to import repositories</h2>
-                <p className="mt-2 text-sm text-gray-400">
+                <h2 className="text-2xl font-semibold text-foreground">Connect GitHub to import repositories</h2>
+                <p className="mt-2 text-sm text-muted-foreground">
                   Sign in with GitHub to browse personal and organization repositories, including private repos you can access.
                 </p>
               </div>
               <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
                 <button
                   onClick={handleLogin}
-                  className="inline-flex items-center rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-black transition-colors hover:bg-cyan-400"
+                  className="inline-flex items-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                 >
                   <GitBranch className="mr-2 size-4" />
                   Sign in with GitHub
                 </button>
-                <div className="inline-flex items-center gap-2 rounded-lg border border-gray-800 bg-gray-950 px-3 py-2 text-xs text-gray-400">
-                  <ShieldCheck className="size-4 text-emerald-400" />
+                <div className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs text-muted-foreground">
+                  <ShieldCheck className="size-4 text-success" />
                   Your GitHub token stays tied to your own session
                 </div>
               </div>
-              {error ? <p className="text-sm text-red-400">{error}</p> : null}
+              {error ? <p className="text-sm text-danger">{error}</p> : null}
             </div>
           </div>
         ) : (
           <>
-            <div className="space-y-4 rounded-xl border border-gray-800 bg-gray-900 p-5">
+            <div className="space-y-4 rounded-xl border border-border bg-card p-5">
               <div className="flex flex-wrap items-center gap-3">
                 <button
                   onClick={() => setSourceMode('personal')}
                   className={`rounded-lg px-4 py-2 text-sm transition-colors ${
                     sourceMode === 'personal'
-                      ? 'bg-purple-600 text-white'
-                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-surface-raised text-foreground hover:bg-muted'
                   }`}
                 >
                   Personal Repos
@@ -210,8 +210,8 @@ export default function ImportReposPage() {
                   onClick={() => setSourceMode('organization')}
                   className={`rounded-lg px-4 py-2 text-sm transition-colors ${
                     sourceMode === 'organization'
-                      ? 'bg-purple-600 text-white'
-                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-surface-raised text-foreground hover:bg-muted'
                   }`}
                 >
                   Organization Repos
@@ -221,7 +221,7 @@ export default function ImportReposPage() {
                   <select
                     value={selectedOrg}
                     onChange={(e) => setSelectedOrg(e.target.value)}
-                    className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white"
+                    className="rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-foreground"
                   >
                     {orgs.map((org) => (
                       <option key={org.id} value={org.login}>
@@ -235,27 +235,27 @@ export default function ImportReposPage() {
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search repos, descriptions, languages..."
-                  className="min-w-[220px] flex-1 rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-sm text-white placeholder-gray-500"
+                  className="min-w-[220px] flex-1 rounded-lg border border-border bg-surface-raised px-4 py-2 text-sm text-foreground placeholder:text-muted-foreground"
                 />
               </div>
 
-              {message ? <p className="text-sm text-green-400">{message}</p> : null}
-              {error ? <p className="text-sm text-red-400">{error}</p> : null}
+              {message ? <p className="text-sm text-success">{message}</p> : null}
+              {error ? <p className="text-sm text-danger">{error}</p> : null}
             </div>
 
             {loading ? (
-              <div className="rounded-xl border border-gray-800 bg-gray-900 p-8 text-gray-400">
+              <div className="rounded-xl border border-border bg-card p-8 text-muted-foreground">
                 <div className="inline-flex items-center gap-2">
                   <Loader2 className="size-4 animate-spin" />
                   Loading repositories...
                 </div>
               </div>
             ) : (
-              <div className="overflow-hidden rounded-xl border border-gray-800 bg-gray-900">
-                <div className="border-b border-gray-800 px-5 py-4 text-sm text-gray-400">
+              <div className="overflow-hidden rounded-xl border border-border bg-card">
+                <div className="border-b border-border px-5 py-4 text-sm text-muted-foreground">
                   {filteredRepos.length} repositories available
                 </div>
-                <div className="divide-y divide-gray-800">
+                <div className="divide-y divide-border">
                   {filteredRepos.map((repo) => (
                     <div
                       key={repo.id}
@@ -267,20 +267,20 @@ export default function ImportReposPage() {
                             href={repo.html_url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="font-medium text-purple-400 hover:text-purple-300"
+                            className="font-medium text-primary hover:text-accent-foreground"
                           >
                             {repo.full_name}
                           </a>
                           {repo.private ? (
-                            <span className="rounded-full border border-yellow-800 bg-yellow-900/30 px-2 py-0.5 text-[10px] uppercase tracking-wider text-yellow-400">
+                            <span className="rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-warning">
                               Private
                             </span>
                           ) : null}
                         </div>
-                        <p className="mt-1 text-sm text-gray-400">
+                        <p className="mt-1 text-sm text-muted-foreground">
                           {repo.description || 'No description provided'}
                         </p>
-                        <p className="mt-2 text-xs text-gray-500">
+                        <p className="mt-2 text-xs text-muted-foreground">
                           {repo.language || 'Unknown'} · Updated{' '}
                           {repo.updated_at ? new Date(repo.updated_at).toLocaleDateString() : 'N/A'}
                         </p>
@@ -292,7 +292,7 @@ export default function ImportReposPage() {
                             void handleImport(repo, false);
                           }}
                           disabled={busyRepo === repo.full_name}
-                          className="rounded-lg bg-gray-800 px-4 py-2 text-sm text-gray-200 transition-colors hover:bg-gray-700 disabled:opacity-50"
+                          className="rounded-lg bg-surface-raised px-4 py-2 text-sm text-foreground transition-colors hover:bg-muted disabled:opacity-50"
                         >
                           {busyRepo === repo.full_name ? 'Working...' : 'Import'}
                         </button>
@@ -301,7 +301,7 @@ export default function ImportReposPage() {
                             void handleImport(repo, true);
                           }}
                           disabled={busyRepo === repo.full_name}
-                          className="rounded-lg bg-purple-600 px-4 py-2 text-sm text-white transition-colors hover:bg-purple-700 disabled:opacity-50"
+                          className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
                         >
                           Import & Scan
                         </button>
@@ -310,7 +310,7 @@ export default function ImportReposPage() {
                   ))}
 
                   {!filteredRepos.length ? (
-                    <div className="px-5 py-8 text-sm text-gray-400">
+                    <div className="px-5 py-8 text-sm text-muted-foreground">
                       No repositories matched your filters.
                     </div>
                   ) : null}
@@ -320,6 +320,6 @@ export default function ImportReposPage() {
           </>
         )}
       </div>
-    </main>
+    </div>
   );
 }

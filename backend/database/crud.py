@@ -5,7 +5,7 @@ import logging
 from typing import Any
 
 from sqlalchemy import desc
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from database.models import (
     Repository,
@@ -20,6 +20,36 @@ from database.models import (
 from tools.scoring import severity_rank
 
 logger = logging.getLogger(__name__)
+
+_SECRET_KEY_MARKERS = ("access_token", "api_key")
+
+
+def _is_secret_key(key: Any) -> bool:
+    """Return True when a dict key names a credential that must not be stored."""
+    lowered = str(key).lower()
+    return any(marker in lowered for marker in _SECRET_KEY_MARKERS)
+
+
+def strip_secrets(state: Any) -> Any:
+    """Return a copy of ``state`` with credential keys removed.
+
+    Drops ``github_access_token`` and any key containing ``access_token`` or
+    ``api_key``. Nested dicts are copied and stripped too; lists are left
+    untouched (shared by reference) to keep this cheap for large payloads.
+
+    Args:
+        state: Agent state / scan payload. Non-dict values are returned as-is.
+
+    Returns:
+        A new dict without secret keys, or ``state`` unchanged if not a dict.
+    """
+    if not isinstance(state, dict):
+        return state
+    return {
+        key: strip_secrets(value) if isinstance(value, dict) else value
+        for key, value in state.items()
+        if not _is_secret_key(key)
+    }
 
 
 # ─── Repository Operations ───────────────────────────────────
@@ -111,7 +141,7 @@ def save_scan(
         executive_summary=agent_state.get("executive_summary"),
         priority_actions=agent_state.get("priority_actions"),
         roi_analysis=agent_state.get("roi_analysis"),
-        raw_result=agent_state,
+        raw_result=strip_secrets(agent_state),
         status="complete",
         scan_duration_seconds=duration_seconds,
     )
@@ -300,7 +330,18 @@ def get_scan_findings(
     scan = get_scan_by_id(db, scan_id, user_id=user_id)
     if not scan:
         return None
-    if scan.findings:
+    # Eager-load child rows: lazy access below was one query per finding
+    # per relationship (thousands of queries for a large scan).
+    findings = (
+        db.query(Finding)
+        .filter(Finding.scan_id == scan.id)
+        .options(
+            selectinload(Finding.suppressions),
+            selectinload(Finding.feedback_entries),
+        )
+        .all()
+    )
+    if findings:
         raw_findings = _get_raw_findings_by_id(scan)
         return [
             {
@@ -366,11 +407,11 @@ def get_scan_findings(
                     )
                 ),
             }
-            for finding in scan.findings
+            for finding in findings
         ]
     analysis = _get_scan_analysis(scan)
-    findings = analysis.get("findings")
-    return findings if isinstance(findings, list) else []
+    raw = analysis.get("findings")
+    return raw if isinstance(raw, list) else []
 
 
 def query_scan_findings(

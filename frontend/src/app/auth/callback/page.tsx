@@ -24,7 +24,7 @@ export default function GithubCallback() {
 
   return (
     <main className="min-h-screen flex items-center justify-center">
-      <p className="text-gray-400 text-sm">{message}</p>
+      <p className="text-muted-foreground text-sm">{message}</p>
     </main>
   );
 }

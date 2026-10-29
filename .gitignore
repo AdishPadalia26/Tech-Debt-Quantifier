@@ -19,6 +19,11 @@ build/
 .env.local
 .env.*.local
 *.env
+.env.bak*
+techdebt.db.bak-*
+
+# Large downloaded datasets (live rate lookup)
+/backend/data/cache/*.zip
 
 # Database
 *.db

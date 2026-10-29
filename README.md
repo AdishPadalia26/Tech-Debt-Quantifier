@@ -181,7 +181,7 @@ tech-debt-quantifier/
 |-- backend/
 |   |-- main.py                         # FastAPI app, background job runner, health endpoints, and in-memory polling state
 |   |-- constants.py                    # Central numeric defaults: churn bands, complexity thresholds, baseline minutes, sprint hours
-|   |-- config.py                       # Environment-variable defaults for Slack, Jira, and GitHub OAuth
+|   |-- app_config.py                   # Environment-variable defaults for Slack, Jira, and GitHub OAuth
 |   |-- mcp_server.py                   # Clone, cache, and local analysis tools exposed through FastMCP
 |   |-- report_generator.py             # Stable import shim for PDF generation
 |   |-- requirements.txt                # Backend dependency manifest

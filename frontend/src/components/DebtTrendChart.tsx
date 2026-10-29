@@ -18,11 +18,11 @@ interface Props {
 export default function DebtTrendChart({ trend, currentCost }: Props) {
   if (!trend.trend || trend.trend.length < 2) {
     return (
-      <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
-        <h3 className="text-lg font-semibold text-white mb-2">
+      <div className="bg-surface-raised rounded-xl p-6 border border-border">
+        <h3 className="text-lg font-semibold text-foreground mb-2">
           Debt Over Time
         </h3>
-        <p className="text-gray-400 text-sm">
+        <p className="text-muted-foreground text-sm">
           Run more scans to see trend data.
         </p>
       </div>
@@ -31,10 +31,10 @@ export default function DebtTrendChart({ trend, currentCost }: Props) {
 
   const directionColor =
     trend.direction === 'up'
-      ? 'text-red-400'
+      ? 'text-danger'
       : trend.direction === 'down'
-      ? 'text-green-400'
-      : 'text-gray-400';
+      ? 'text-success'
+      : 'text-muted-foreground';
 
   const directionIcon =
     trend.direction === 'up' ? '↑' : trend.direction === 'down' ? '↓' : '→';
@@ -49,12 +49,12 @@ export default function DebtTrendChart({ trend, currentCost }: Props) {
     if (active && payload?.length) {
       const d = payload[0].payload;
       return (
-        <div className="bg-gray-800 border border-gray-600 rounded-lg p-3">
-          <p className="text-gray-400 text-sm">{d.date_display}</p>
-          <p className="text-purple-400 font-medium">
+        <div className="bg-surface-raised border border-border-strong rounded-lg p-3">
+          <p className="text-muted-foreground text-sm">{d.date_display}</p>
+          <p className="text-primary font-medium">
             ${d.total_cost.toLocaleString()}
           </p>
-          <p className="text-gray-400 text-sm">
+          <p className="text-muted-foreground text-sm">
             Score: {d.debt_score.toFixed(0)}
           </p>
         </div>
@@ -64,14 +64,14 @@ export default function DebtTrendChart({ trend, currentCost }: Props) {
   };
 
   return (
-    <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
+    <div className="bg-surface-raised rounded-xl p-6 border border-border">
       <div className="flex justify-between items-start mb-4">
         <div>
-          <h3 className="text-lg font-semibold text-white">Debt Over Time</h3>
-          <p className="text-gray-400 text-sm">
+          <h3 className="text-lg font-semibold text-foreground">Debt Over Time</h3>
+          <p className="text-muted-foreground text-sm">
             {trend.total_scans} scan{trend.total_scans !== 1 ? 's' : ''}
             {currentCost !== undefined && (
-              <span className="ml-2 text-purple-400">
+              <span className="ml-2 text-primary">
                 Current: ${currentCost.toLocaleString()}
               </span>
             )}
@@ -81,30 +81,30 @@ export default function DebtTrendChart({ trend, currentCost }: Props) {
           <p className={`text-lg font-bold ${directionColor}`}>
             {directionIcon} {Math.abs(trend.change_pct).toFixed(1)}%
           </p>
-          <p className="text-gray-500 text-xs">vs previous scan</p>
+          <p className="text-muted-foreground text-xs">vs previous scan</p>
         </div>
       </div>
 
       <ResponsiveContainer width="100%" height={250}>
         <LineChart data={trend.trend}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border-strong)" />
           <XAxis
             dataKey="date_display"
-            tick={{ fill: '#9ca3af', fontSize: 12 }}
-            axisLine={{ stroke: '#374151' }}
+            tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
+            axisLine={{ stroke: 'var(--border-strong)' }}
           />
           <YAxis
-            tick={{ fill: '#9ca3af', fontSize: 12 }}
-            axisLine={{ stroke: '#374151' }}
+            tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
+            axisLine={{ stroke: 'var(--border-strong)' }}
             tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
           />
           <Tooltip content={<CustomTooltip />} />
           <Line
             type="monotone"
             dataKey="total_cost"
-            stroke="#8b5cf6"
+            stroke="var(--chart-1)"
             strokeWidth={2}
-            dot={{ fill: '#8b5cf6', r: 4 }}
+            dot={{ fill: 'var(--chart-6)', r: 4 }}
             activeDot={{ r: 6 }}
           />
         </LineChart>

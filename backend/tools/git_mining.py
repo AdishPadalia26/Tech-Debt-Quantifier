@@ -38,7 +38,7 @@ class GitMiner:
         return str(Path(file_path).as_posix()).lstrip("./")
 
     def get_hotspots(
-        self, repo_path: str, max_commits: int = 50
+        self, repo_path: str, max_commits: int | None = None
     ) -> list[dict[str, Any]]:
         """Find files with the most commits (code hotspots).
 
@@ -47,12 +47,13 @@ class GitMiner:
 
         Args:
             repo_path: Path to the git repository
-            max_commits: Maximum number of commits to analyze
+            max_commits: Maximum number of commits to analyze; None means every
+                non-merge commit available in the clone
 
         Returns:
             List of hotspot files sorted by change count (descending)
         """
-        cache_key = f"{repo_path}:{max_commits}"
+        cache_key = f"{repo_path}:{max_commits if max_commits else 'all'}"
         if cache_key in self._hotspots_cache:
             logger.info("Using cached hotspots data")
             return self._hotspots_cache[cache_key]
@@ -64,11 +65,11 @@ class GitMiner:
         try:
             delimiter = "\x1f"
             cmd = [
-                "git", "-C", repo_path,
-                "log", "--no-merges", f"-n{max_commits}",
-                f"--format={delimiter}%ae%x00%aI",
-                "--name-only",
+                "git", "-C", repo_path, "log", "--no-merges",
             ]
+            if max_commits:
+                cmd.append(f"-n{max_commits}")
+            cmd += [f"--format={delimiter}%ae%x00%aI", "--name-only"]
             result = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -144,7 +145,9 @@ class GitMiner:
                 return multiplier
         return 1.0
 
-    def _get_fallback_hotspots(self, repo_path: str) -> list[dict[str, Any]]:
+    def _get_fallback_hotspots(
+        self, repo_path: str, summary: dict[str, Any] | None = None
+    ) -> list[dict[str, Any]]:
         """Generate hotspots based on file complexity when git history is unavailable.
         
         Uses complexity analysis to identify high-risk files as a fallback
@@ -152,14 +155,15 @@ class GitMiner:
         
         Args:
             repo_path: Path to the repository
-            
+            summary: Precomputed StaticAnalyzer summary; computed if None
+
         Returns:
             List of hotspot files based on complexity metrics
         """
-        from tools.static_analysis import StaticAnalyzer
-        
-        static_analyzer = StaticAnalyzer()
-        summary = static_analyzer.get_summary(repo_path)
+        if summary is None:
+            from tools.static_analysis import StaticAnalyzer
+
+            summary = StaticAnalyzer().get_summary(repo_path)
         all_functions = summary.get("all_functions", [])
         
         file_complexity: dict[str, dict[str, Any]] = defaultdict(
@@ -190,7 +194,9 @@ class GitMiner:
         logger.info(f"[FALLBACK] Generated {len(hotspots)} hotspots based on complexity")
         return hotspots
 
-    def get_risky_files(self, repo_path: str) -> list[dict[str, Any]]:
+    def get_risky_files(
+        self, repo_path: str, summary: dict[str, Any] | None = None
+    ) -> list[dict[str, Any]]:
         """Find risky files by combining complexity and churn data.
         
         Cross-references high complexity files with frequently changed files
@@ -201,22 +207,25 @@ class GitMiner:
         
         Args:
             repo_path: Path to the repository
-            
+            summary: Precomputed StaticAnalyzer summary (avoids re-scanning);
+                computed if None
+
         Returns:
             List of risky files with cost estimates, sorted by cost (descending)
         """
         from data.rate_fetcher import RateFetcher
         from data.sonarqube_rules import SonarQubeRules
-        from tools.static_analysis import StaticAnalyzer
 
-        static_analyzer = StaticAnalyzer()
-        summary = static_analyzer.get_summary(repo_path)
+        if summary is None:
+            from tools.static_analysis import StaticAnalyzer
+
+            summary = StaticAnalyzer().get_summary(repo_path)
         hotspots = self.get_hotspots(repo_path)
         used_fallback = False
         
         if not hotspots:
             logger.warning("[CODE QUALITY] No hotspots from git mining - using complexity fallback")
-            hotspots = self._get_fallback_hotspots(repo_path)
+            hotspots = self._get_fallback_hotspots(repo_path, summary=summary)
             used_fallback = True
         
         all_functions = summary.get("all_functions", [])
@@ -237,6 +246,11 @@ class GitMiner:
 
         risky_files = []
         matched_count = 0
+        sonar_rules = SonarQubeRules()
+        rate_fetcher = RateFetcher()
+        role = DEBT_TYPE_TO_ROLE["code_quality"]
+        hourly_rate = rate_fetcher.get_rate(role)
+        hourly_rate_source = rate_fetcher.get_all_rates().get("source", "unknown")
         
         for file_path, functions in file_to_functions.items():
             if file_path not in hotspots_by_path:
@@ -257,13 +271,9 @@ class GitMiner:
 
             churn_multiplier = self.get_churn_multiplier(change_count)
 
-            sonar_rules = SonarQubeRules()
             base_minutes = sonar_rules.get_minutes_for_complexity(severity)
             adjusted_minutes = base_minutes * churn_multiplier
 
-            role = DEBT_TYPE_TO_ROLE["code_quality"]
-            rate_fetcher = RateFetcher()
-            hourly_rate = rate_fetcher.get_rate(role)
             remediation_hours = adjusted_minutes / 60
             confidence = calculate_confidence(
                 used_fallback=used_fallback,
@@ -292,7 +302,7 @@ class GitMiner:
                     "base_minutes": round(base_minutes, 2),
                     "adjusted_minutes": round(adjusted_minutes, 2),
                     "hourly_rate": hourly_rate,
-                    "hourly_rate_source": rate_fetcher.get_all_rates().get("source", "unknown"),
+                    "hourly_rate_source": hourly_rate_source,
                     "risk_level": business_impact,
                     "used_fallback": used_fallback,
                     "functions": [

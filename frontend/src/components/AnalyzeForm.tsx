@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, GitBranch, Loader2, Sparkles } from 'lucide-react';
+import { ChevronDown, GitBranch, Loader2 } from 'lucide-react';
 
 import {
   AUTH_CHANGED_EVENT,
@@ -105,7 +105,10 @@ export default function AnalyzeForm({ onJobStarted }: Props) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!url.trim()) return;
+    if (!url.trim()) {
+      setError("Paste a GitHub repository URL, or pick an example below.");
+      return;
+    }
 
     if (!url.includes('github.com')) {
       setError('Please enter a valid GitHub repository URL');
@@ -142,30 +145,38 @@ export default function AnalyzeForm({ onJobStarted }: Props) {
   return (
     <Card className="mx-auto w-full max-w-2xl border-border bg-card">
       <CardHeader>
-        <div className="mb-3 inline-flex w-fit items-center gap-2 rounded-full border border-border bg-muted/40 px-3 py-1 text-xs text-muted-foreground">
-          <Sparkles className="size-3.5 text-primary" />
-          Explainable debt scoring for engineering and leadership
-        </div>
-        <CardTitle>Analyze Repository</CardTitle>
+        <CardTitle>Analyze a repository</CardTitle>
         <CardDescription>
-          Paste a GitHub URL to quantify tech debt cost and remediation effort.
+          Public repos work without signing in. Most scans finish in a few minutes.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <form onSubmit={handleSubmit} className="space-y-4">
+          <label htmlFor="analyze-repo-url" className="sr-only">
+            GitHub repository URL
+          </label>
           <div className="flex flex-col gap-2 sm:flex-row">
             <div className="relative flex-1">
-              <GitBranch className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <GitBranch
+                aria-hidden
+                className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              />
               <input
+                id="analyze-repo-url"
                 type="url"
+                aria-invalid={Boolean(error)}
+                aria-describedby={error ? "analyze-repo-error" : undefined}
                 value={url}
-                onChange={(e) => setUrl(e.target.value)}
+                onChange={(e) => {
+                  setUrl(e.target.value);
+                  if (error) setError("");
+                }}
                 placeholder="https://github.com/owner/repository"
                 className="w-full rounded-md border border-input bg-input py-2.5 pl-9 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 disabled={loading}
               />
             </div>
-            <Button type="submit" disabled={loading || !url.trim()} className="min-w-28">
+            <Button type="submit" disabled={loading} className="min-w-28">
               {loading ? (
                 <>
                   <Loader2 className="mr-2 size-4 animate-spin" />
@@ -176,7 +187,11 @@ export default function AnalyzeForm({ onJobStarted }: Props) {
               )}
             </Button>
           </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && (
+            <p id="analyze-repo-error" role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
         </form>
 
         <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-3">
@@ -207,7 +222,7 @@ export default function AnalyzeForm({ onJobStarted }: Props) {
                 </>
               ) : (
                 <>
-                  Browse Repos
+                  Browse repos
                   <ChevronDown className="ml-2 size-4" />
                 </>
               )}
@@ -238,7 +253,7 @@ export default function AnalyzeForm({ onJobStarted }: Props) {
                         {repo.full_name}
                       </span>
                       {repo.private ? (
-                        <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-amber-400">
+                        <span className="rounded-full border border-warning/20 bg-warning/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-warning">
                           Private
                         </span>
                       ) : null}
@@ -251,9 +266,7 @@ export default function AnalyzeForm({ onJobStarted }: Props) {
         </div>
 
         <div>
-          <p className="mb-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
-            Try an example
-          </p>
+          <p className="mb-2 text-sm text-muted-foreground">Or try an open-source repo</p>
           <div className="flex flex-wrap gap-2">
             {exampleRepos.map((repo) => (
               <Button

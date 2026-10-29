@@ -12,19 +12,21 @@ import ast
 import logging
 import os
 import re
+import subprocess
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from pydriller import Repository
-
 from core.cache_manager import get_cache
-from constants import SKIP_DIRS
+from constants import HOURLY_RATES, SKIP_DIRS
 from intelligence.rate_agent import RateIntelligenceAgent
 
 logger = logging.getLogger(__name__)
+
+GIT_LOG_TIMEOUT_SECONDS = 60
+AI_DETECTION_DISABLED_NOTE = "AI detection disabled pending validation"
 
 CATEGORIES = {
     "frameworks": [
@@ -199,67 +201,123 @@ class RepoProfiler:
 
         return deps
 
+    def _read_commit_log(self, repo_path: str) -> list[dict[str, Any]] | None:
+        """Read non-merge commit metadata with one ``git log`` subprocess.
+
+        Uses ``--name-only`` so no diffs/blobs are loaded (safe on blobless
+        clones).
+
+        Args:
+            repo_path: Path to the git repository
+
+        Returns:
+            Commits (newest first) with ``email``, ``timestamp`` and ``files``
+            keys, or None when git fails or times out.
+        """
+        sep = ""
+        cmd = [
+            "git", "-C", repo_path, "log", "--no-merges",
+            "--format=%H%x1f%ae%x1f%at", "--name-only",
+        ]
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=GIT_LOG_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired:
+            logger.warning("git log timed out for %s", repo_path)
+            return None
+        except OSError as e:
+            logger.warning("Could not run git log for %s: %s", repo_path, e)
+            return None
+        if result.returncode != 0:
+            logger.warning("git log failed for %s: %s", repo_path, result.stderr.strip())
+            return None
+
+        commits: list[dict[str, Any]] = []
+        current: dict[str, Any] | None = None
+        for raw_line in result.stdout.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            if sep in line:
+                parts = line.split(sep)
+                if len(parts) < 3:
+                    continue
+                try:
+                    timestamp = int(parts[2].strip())
+                except ValueError:
+                    timestamp = None
+                current = {
+                    "sha": parts[0].strip(),
+                    "email": parts[1].strip().lower(),
+                    "timestamp": timestamp,
+                    "files": [],
+                }
+                commits.append(current)
+            elif current is not None:
+                current["files"].append(line)
+        return commits
+
     def profile_team(self, repo_path: str) -> dict:
-        import logging
-        logger = logging.getLogger(__name__)
-        
-        # Verify repo path exists and has git history
-        git_dir = os.path.join(repo_path, '.git')
+        """Profile team size, activity and bus factor from git history.
+
+        Args:
+            repo_path: Path to repository
+
+        Returns:
+            Team profile dict (see ``_default_team_profile`` for keys)
+        """
+        git_dir = os.path.join(repo_path, ".git")
         if not os.path.exists(git_dir):
             logger.warning(f"No .git found at {repo_path}")
             return self._default_team_profile()
-        
+
         logger.info(f"Profiling team for repo at: {repo_path}")
-        
+
         try:
-            from pydriller import Repository
-            
-            commits = list(Repository(repo_path).traverse_commits())
-            logger.info(f"Found {len(commits)} total commits")
-            
+            commits = self._read_commit_log(repo_path)
             if not commits:
                 return self._default_team_profile()
-            
-            # All unique authors ever
-            all_emails = set(c.author.email for c in commits 
-                            if c.author and c.author.email)
-            
-            # Active authors = last 90 days
-            from datetime import datetime, timedelta
-            cutoff = datetime.now() - timedelta(days=90)
-            active_emails = set(
-                c.author.email for c in commits
-                if c.author and c.author.email 
-                and c.author_date and c.author_date.replace(tzinfo=None) > cutoff
-            )
-            
-            # Repo age
-            first_commit = commits[0]
-            last_commit = commits[-1]
-            repo_age_days = (
-                last_commit.author_date - first_commit.author_date
-            ).days if first_commit.author_date and last_commit.author_date else 365
-            
+            logger.info(f"Found {len(commits)} total commits")
+
+            all_emails = {c["email"] for c in commits if c["email"]}
+
+            cutoff = (datetime.now() - timedelta(days=90)).timestamp()
+            active_emails = {
+                c["email"] for c in commits
+                if c["email"] and c["timestamp"] is not None
+                and c["timestamp"] > cutoff
+            }
+
+            timestamps = [c["timestamp"] for c in commits if c["timestamp"] is not None]
+            if timestamps:
+                repo_age_days = int((max(timestamps) - min(timestamps)) // 86400)
+            else:
+                repo_age_days = 365
+
             # Bus factor: authors covering 80% of commits
-            from collections import Counter
-            author_commits = Counter(
-                c.author.email for c in commits if c.author
-            )
+            author_commits = Counter(c["email"] for c in commits)
             total_commits = len(commits)
-            sorted_authors = author_commits.most_common()
-            
             cumulative = 0
             bus_factor = 0
-            for author, count in sorted_authors:
+            for _author, count in author_commits.most_common():
                 cumulative += count
                 bus_factor += 1
                 if cumulative / total_commits >= 0.8:
                     break
-            
-            team_size = len(all_emails)
-            logger.info(f"Team: {team_size} total, {len(active_emails)} active, "
-                       f"bus_factor={bus_factor}, age={repo_age_days}d")
-            
+
+            team_size = max(len(all_emails), 1)
+            unique_files = {f for c in commits for f in c["files"]}
+            logger.info(
+                f"Team: {team_size} total, {len(active_emails)} active, "
+                f"bus_factor={bus_factor}, age={repo_age_days}d"
+            )
+
             return {
                 "estimated_team_size": team_size,
                 "unique_authors": team_size,
@@ -270,13 +328,12 @@ class RepoProfiler:
                 "repo_age_days": repo_age_days,
                 "total_commits": total_commits,
                 "is_solo": bus_factor == 1,
-                "commit_frequency": round(total_commits / max(repo_age_days/7, 1), 1)
+                "commit_frequency": round(total_commits / max(repo_age_days / 7, 1), 1),
+                "unique_files_touched": len(unique_files),
             }
-            
+
         except Exception as e:
             logger.error(f"Team profiling failed: {e}", exc_info=True)
-            import traceback
-            logger.error(traceback.format_exc())
             return self._default_team_profile()
 
     def _default_team_profile(self) -> dict:
@@ -347,7 +404,7 @@ class RepoProfiler:
                 except Exception as e:
                     logger.warning(f"Rate search failed: {e}", exc_info=True)
 
-        base_rate = all_rates.get(primary_lang.lower(), {}).get("rate", 84.55)
+        base_rate = all_rates.get(primary_lang.lower(), {}).get("rate", HOURLY_RATES["mid"])
 
         specialist_premium = 0.0
         if ai_libs or databases or cloud:
@@ -458,111 +515,26 @@ class RepoProfiler:
         }
 
     def detect_ai_generated_code(self, repo_path: str) -> dict[str, Any]:
-        """Detect suspected AI-generated code files.
-        
+        """Report AI-generated code detection results.
+
+        The previous heuristic walked full git history with per-file diffs
+        (minutes on large blobless clones) and its signals were unvalidated,
+        so detection is disabled and a neutral result is returned.
+
         Args:
-            repo_path: Path to repository
-            
+            repo_path: Path to repository (unused while disabled)
+
         Returns:
-            AI detection results with suspected files
+            AI detection result with no suspected files
         """
-        cache_key = self._cache.make_key("ai_detection", repo_path)
-
-        if self._cache.is_fresh(cache_key, "repo_profile"):
-            cached = self._cache.get(cache_key, "repo_profile")
-            if cached and "ai_detection" in cached:
-                return cached["ai_detection"]
-
-        suspected_files = []
-        total_lines = 0
-
-        try:
-            repo = Repository(repo_path, num_workers=1)
-            file_commits: dict[str, dict] = {}
-
-            for commit in repo.traverse_commits():
-                for modified in commit.modified_files:
-                    path = modified.new_path or modified.old_path
-                    if not path or not path.endswith(".py"):
-                        continue
-                    if any(skip in path for skip in SKIP_DIRS):
-                        continue
-
-                    if path not in file_commits:
-                        file_commits[path] = {
-                            "commit_count": 0,
-                            "added_lines": 0,
-                            "has_tests": False,
-                            "commit_lines": {},
-                        }
-
-                    fc = file_commits[path]
-                    fc["commit_count"] += 1
-                    added = modified.added_lines if hasattr(modified, "added_lines") else 0
-                    fc["added_lines"] += added
-
-                    if commit.author_date:
-                        fc["commit_lines"][commit.author_date] = added
-
-            for file_path, fc in file_commits.items():
-                signals = 0
-                signal_details = []
-
-                if len(fc["commit_lines"]) == 1:
-                    largest_commit = max(fc["commit_lines"].values())
-                    if largest_commit > 150:
-                        signals += 1
-                        signal_details.append("Single large commit")
-
-                if fc["added_lines"] > 100:
-                    func_count = self._count_functions(os.path.join(repo_path, file_path))
-                    if func_count > 5:
-                        has_docstrings = self._check_docstrings(os.path.join(repo_path, file_path))
-                        if not has_docstrings:
-                            signals += 1
-                            signal_details.append("No docstrings")
-
-                generic_pct = self._check_generic_names(os.path.join(repo_path, file_path))
-                if generic_pct > 0.4:
-                    signals += 1
-                    signal_details.append(f"Generic names: {generic_pct:.0%}")
-
-                if fc["added_lines"] > 300:
-                    try_complex = self._check_try_except(os.path.join(repo_path, file_path))
-                    if not try_complex:
-                        signals += 1
-                        signal_details.append("No error handling")
-
-                ai_prob = min(1.0, signals / 4)
-
-                if ai_prob > 0.3:
-                    suspected_files.append({
-                        "file": file_path,
-                        "probability": round(ai_prob, 2),
-                        "signals": signal_details,
-                        "lines_added": fc["added_lines"],
-                    })
-                    total_lines += fc["added_lines"]
-
-        except Exception as e:
-            logger.warning(f"AI detection error: {e}", exc_info=True)
-
-        suspected_files.sort(key=lambda x: x["probability"], reverse=True)
-
-        recommendation = "Review suspected files for quality issues"
-        if len(suspected_files) > 20:
-            recommendation = "High AI usage detected - consider code review"
-        elif len(suspected_files) == 0:
-            recommendation = "No obvious AI-generated code patterns"
-
-        result = {
-            "suspected_files": suspected_files[:50],
-            "total_suspected": len(suspected_files),
-            "total_suspected_lines": total_lines,
-            "recommendation": recommendation,
+        return {
+            "suspected_files": [],
+            "total_suspected": 0,
+            "total_suspected_lines": 0,
+            "recommendation": AI_DETECTION_DISABLED_NOTE,
+            "method": "disabled",
+            "note": AI_DETECTION_DISABLED_NOTE,
         }
-
-        return result
 
     def _count_functions(self, file_path: str) -> int:
         """Count functions in a Python file."""

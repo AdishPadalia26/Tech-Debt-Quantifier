@@ -1,5 +1,8 @@
 """Scan and finding routes."""
 
+import logging
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from api.deps import get_current_user, get_current_user_optional
@@ -11,12 +14,28 @@ from database.crud import (
     get_scan_roadmap,
     get_scan_summary_data,
     query_scan_findings,
+    strip_secrets,
     suppress_finding,
 )
 from database.models import Scan, User
 from models.schemas import FindingFeedbackRequest, FindingSuppressionRequest
 
 router = APIRouter(tags=["scans"])
+logger = logging.getLogger(__name__)
+
+# raw_result keys the frontend scan detail page reads (frontend/src/app/scans).
+_LIFTED_RAW_KEYS = ("github_url", "repo_id")
+
+# Small estimate-quality keys from raw_result["raw_analysis"] shown on the scan page.
+_LIFTED_ANALYSIS_KEYS = (
+    "estimation_stats",
+    "warnings",
+    "total_cost_range",
+    "non_principal_cost",
+    "waterfall",
+    "model_version",
+    "hourly_rates",
+)
 
 
 @router.get("/scan/compare")
@@ -48,11 +67,50 @@ async def compare_scan_endpoint(
         db.close()
 
 
+def build_scan_detail(scan: Scan, include_raw: bool = False) -> dict[str, Any]:
+    """Build the GET /scan/{id} response body without leaking secrets.
+
+    The full ``raw_result`` (~10 MB) is only included when ``include_raw`` is
+    set, and is always passed through ``strip_secrets``. By default a slim
+    ``raw_result`` stub with only the keys the frontend reads
+    (``github_url``, ``repo_id``) is returned, and those keys are also lifted
+    to the top level.
+
+    Args:
+        scan: Persisted scan row.
+        include_raw: Return the full (secret-stripped) raw_result.
+
+    Returns:
+        JSON-serializable scan detail dict.
+    """
+    raw = scan.raw_result if isinstance(scan.raw_result, dict) else {}
+    raw_analysis = raw.get("raw_analysis")
+    raw_analysis = raw_analysis if isinstance(raw_analysis, dict) else {}
+    lifted = {key: raw.get(key) for key in _LIFTED_RAW_KEYS}
+    return {
+        "scan_id": scan.id,
+        "total_cost": scan.total_cost_usd,
+        "debt_score": scan.debt_score,
+        "executive_summary": scan.executive_summary,
+        "priority_actions": scan.priority_actions,
+        "roi_analysis": scan.roi_analysis,
+        "llm_insights": raw.get("llm_insights")
+        or raw_analysis.get("llm_insights")
+        or {},
+        **lifted,
+        **{key: raw_analysis.get(key) for key in _LIFTED_ANALYSIS_KEYS},
+        "raw_result": strip_secrets(raw) if include_raw else lifted,
+        "created_at": scan.created_at.isoformat() if scan.created_at else None,
+    }
+
+
 @router.get("/scan/{scan_id}")
 async def get_scan(
-    scan_id: str, user: User | None = Depends(get_current_user_optional)
+    scan_id: str,
+    include_raw: bool = False,
+    user: User | None = Depends(get_current_user_optional),
 ):
-    """Get a specific scan by ID."""
+    """Get a specific scan by ID (raw_result only with ``include_raw=true``)."""
     if not DB_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available.")
 
@@ -66,19 +124,7 @@ async def get_scan(
         scan = query.first()
         if not scan:
             raise HTTPException(404, "Scan not found")
-        return {
-            "scan_id": scan.id,
-            "total_cost": scan.total_cost_usd,
-            "debt_score": scan.debt_score,
-            "executive_summary": scan.executive_summary,
-            "priority_actions": scan.priority_actions,
-            "roi_analysis": scan.roi_analysis,
-            "llm_insights": (scan.raw_result or {}).get("llm_insights")
-            or ((scan.raw_result or {}).get("raw_analysis") or {}).get("llm_insights")
-            or {},
-            "raw_result": scan.raw_result,
-            "created_at": scan.created_at.isoformat(),
-        }
+        return build_scan_detail(scan, include_raw=include_raw)
     finally:
         db.close()
 

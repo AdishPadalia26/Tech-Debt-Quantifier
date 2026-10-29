@@ -87,7 +87,7 @@ app.include_router(integrations_router)
 
 @app.on_event("startup")
 async def startup_event() -> None:
-    """Create database tables and pre-probe Redis availability."""
+    """Create database tables and pre-probe Redis and LLM availability."""
     if DB_AVAILABLE:
         try:
             Base.metadata.create_all(bind=engine)
@@ -101,6 +101,14 @@ async def startup_event() -> None:
     from services.job_service import _do_probe
     import threading
     threading.Thread(target=_do_probe, daemon=True, name="redis-probe-startup").start()
+
+    # One tiny LLM call in the background (bounded by LLM_HEALTH_TIMEOUT_SECONDS)
+    # so a dead model / bad key is logged at ERROR and surfaced on /health
+    # instead of being silently swallowed during analysis.
+    from agents.llm_factory import probe_llm_health
+    threading.Thread(
+        target=probe_llm_health, daemon=True, name="llm-probe-startup"
+    ).start()
 
 
 if __name__ == "__main__":

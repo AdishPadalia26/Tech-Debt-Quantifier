@@ -16,6 +16,7 @@ export interface DebtItem {
   severity: string;
   complexity?: number;
   cost_usd: number;
+  cost_range?: CostRange;
   adjusted_minutes: number;
   churn_multiplier: number;
   hourly_rate: number;
@@ -54,7 +55,51 @@ export interface RepoProfile {
   };
 }
 
-export interface DebtReport {
+export interface CostRange {
+  p10: number;
+  p50: number;
+  p90: number;
+}
+
+export interface EstimationStats {
+  llm: number;
+  fallback: number;
+  total: number;
+  fallback_ratio: number;
+  llm_model?: string | null;
+  llm_provider?: string | null;
+  llm_error?: string | null;
+}
+
+export interface HourlyRates {
+  blended_rate: number;
+  confidence: string;
+  live?: boolean;
+  live_sources?: string[] | number;
+  source?: string;
+  citation?: string;
+  reference_version?: string;
+}
+
+export interface EstimateMeta {
+  estimation_stats?: EstimationStats;
+  warnings?: string[];
+  total_cost_range?: CostRange;
+  non_principal_cost?: Partial<
+    Record<'test' | 'docs' | 'example' | 'generated', number>
+  >;
+  waterfall?: {
+    base: number;
+    churn: number;
+    severity: number;
+    repo: number;
+    total: number;
+  };
+  model_version?: string;
+  data_sources?: Record<string, unknown> | string[];
+}
+
+export interface DebtReport extends EstimateMeta {
   job_id?: string;
   status?: string;
   scan_id?: string;
@@ -80,10 +125,7 @@ export interface DebtReport {
   priority_actions?: PriorityAction[];
   roi_analysis?: ROIAnalysis;
   data_sources_used?: string[];
-  hourly_rates?: {
-    blended_rate: number;
-    confidence: string;
-  };
+  hourly_rates?: HourlyRates;
   raw_analysis?: DebtReport;
   raw?: unknown;
 }
@@ -203,6 +245,7 @@ export interface StructuredFinding {
   business_impact?: string;
   effort_hours?: number;
   cost_usd: number;
+  cost_range?: CostRange;
   confidence?: number;
   status?: string;
   suppressed?: boolean;
@@ -397,7 +440,7 @@ export interface ScanSummaryResponse {
   summary: Record<string, unknown>;
 }
 
-export interface ScanDetailResponse {
+export interface ScanDetailResponse extends EstimateMeta {
   scan_id: string;
   total_cost: number;
   debt_score: number;
@@ -405,6 +448,9 @@ export interface ScanDetailResponse {
   priority_actions?: PriorityAction[];
   roi_analysis?: ROIAnalysis;
   raw_result?: unknown;
+  github_url?: string | null;
+  repo_id?: string | null;
+  hourly_rates?: HourlyRates;
   created_at: string;
 }
 

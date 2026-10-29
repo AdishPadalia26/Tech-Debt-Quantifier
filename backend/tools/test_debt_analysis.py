@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from constants import SKIP_DIRS, TEST_DIR_NAMES, TEST_FILE_PATTERNS
+from constants import HOURLY_RATES, SKIP_DIRS, TEST_DIR_NAMES, TEST_FILE_PATTERNS
 from tools.scoring import build_finding_payload, calculate_confidence
 
 
@@ -95,7 +95,7 @@ class TestDebtAnalyzer:
                 category="test_debt",
                 severity=severity,
                 remediation_hours=remediation_hours,
-                hourly_rate=84.55,
+                hourly_rate=HOURLY_RATES["mid"],
                 confidence=confidence,
                 business_impact="high" if is_hotspot else "medium",
                 extra={

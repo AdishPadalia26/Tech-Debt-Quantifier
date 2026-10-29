@@ -15,6 +15,7 @@ from api.deps import (
     get_github_access_token_optional,
 )
 from database.connection import SessionLocal
+from database.crud import strip_secrets
 from database.models import Scan, User
 from models.normalize import normalize_analysis_result
 from models.schemas import AnalyzeRequest, AnalyzeResponse
@@ -108,7 +109,6 @@ async def analyze_repo(
             "error": None,
             "github_url": canonical_url,
             "user_id": user.id if user else None,
-            "github_access_token": github_access_token,
         },
     )
     if cached:
@@ -278,7 +278,7 @@ async def debug_results(job_id: str) -> Any:
     """Return raw in-memory or persisted result JSON for debugging."""
     job = get_job(job_id)
     if job is not None:
-        return job
+        return strip_secrets(job)
     db = SessionLocal()
     try:
         scan = db.query(Scan).filter(Scan.job_id == job_id).first()
@@ -286,7 +286,7 @@ async def debug_results(job_id: str) -> Any:
         db.close()
     if not scan:
         raise HTTPException(404, "Job not found")
-    return scan.raw_result
+    return strip_secrets(scan.raw_result)
 
 
 @router.get("/debug/raw/{job_id}")
@@ -301,7 +301,7 @@ async def debug_raw(job_id: str) -> Any:
     if not scan:
         job = get_job(job_id)
         if job is not None:
-            job_result = job.get("result") or {}
+            job_result = strip_secrets(job.get("result") or {})
             return {
                 "source": "redis",
                 "status": job.get("status"),
@@ -311,7 +311,7 @@ async def debug_raw(job_id: str) -> Any:
             }
         return {"error": "not found"}
 
-    raw = scan.raw_result or {}
+    raw = strip_secrets(scan.raw_result or {})
     return {
         "source": "database",
         "job_id": job_id,

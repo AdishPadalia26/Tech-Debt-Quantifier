@@ -19,10 +19,12 @@ def test_cost_by_category_structure():
     assert "code_quality" in result
 
 
-def test_hybrid_enabled_defaults():
-    """Test hybrid estimation disabled by default."""
-    estimator = CostEstimator()
-    assert estimator._hybrid_enabled is False or estimator._hybrid_enabled is True
+def test_hybrid_enabled_defaults(monkeypatch):
+    """Hybrid estimation is enabled by default and can be switched off."""
+    monkeypatch.delenv("HYBRID_ESTIMATION_ENABLED", raising=False)
+    assert CostEstimator()._hybrid_enabled is True
+    monkeypatch.setenv("HYBRID_ESTIMATION_ENABLED", "false")
+    assert CostEstimator()._hybrid_enabled is False
 
 
 def test_calculate_debt_score():

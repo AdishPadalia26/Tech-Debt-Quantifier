@@ -1,5 +1,820 @@
 {
   "rules": {
+    "python:S1451": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "CODE_SMELL"
+    },
+    "pythonsecurity:S6547": {
+      "minutes": 30,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S6549": {
+      "minutes": 30,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S5135": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S5334": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S5131": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S5496": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S2083": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S6287": {
+      "minutes": 30,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S6680": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S2631": {
+      "minutes": 60,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S2078": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S5146": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S5145": {
+      "minutes": 30,
+      "severity": "MINOR",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S2076": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S6776": {
+      "minutes": 30,
+      "severity": "MINOR",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S5147": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S6639": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S3649": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S6839": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S7044": {
+      "minutes": 30,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S5144": {
+      "minutes": 30,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S6350": {
+      "minutes": 30,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S6096": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "pythonsecurity:S2091": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "python:ExecStatementUsage": {
+      "minutes": 10,
+      "severity": "BLOCKER",
+      "type": "CODE_SMELL"
+    },
+    "python:InequalityUsage": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:PrintStatementUsage": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S138": {
+      "minutes": 20,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S1481": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:NoSonar": {
+      "minutes": 1,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S1854": {
+      "minutes": 1,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S2115": {
+      "minutes": 45,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "python:S3329": {
+      "minutes": 15,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S4502": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S4507": {
+      "minutes": 1,
+      "severity": "MINOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S5659": {
+      "minutes": 30,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S5547": {
+      "minutes": 15,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S5542": {
+      "minutes": 20,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S4423": {
+      "minutes": 2,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S4426": {
+      "minutes": 2,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S2245": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S3330": {
+      "minutes": 10,
+      "severity": "MINOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S2257": {
+      "minutes": 480,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S4433": {
+      "minutes": 15,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S5527": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S4790": {
+      "minutes": 30,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S2755": {
+      "minutes": 15,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "python:S2612": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S3752": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S1313": {
+      "minutes": 30,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S9154": {
+      "minutes": 2,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S9152": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S9158": {
+      "minutes": 2,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S9156": {
+      "minutes": 15,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S4830": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S9160": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6275": {
+      "minutes": 30,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S6249": {
+      "minutes": 10,
+      "severity": "MINOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S9405": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S9409": {
+      "minutes": 2,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6377": {
+      "minutes": 15,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S9408": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S9407": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5042": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S2068": {
+      "minutes": 30,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S6785": {
+      "minutes": 480,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S5332": {
+      "minutes": 30,
+      "severity": "MINOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S6786": {
+      "minutes": 60,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S6303": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S6308": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S6781": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "python:S6437": {
+      "minutes": 60,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "python:S8978": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "python:S5344": {
+      "minutes": 30,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S2077": {
+      "minutes": 20,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S6319": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S5439": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "python:S6779": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "python:S5443": {
+      "minutes": 30,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S6418": {
+      "minutes": 30,
+      "severity": "BLOCKER",
+      "type": "VULNERABILITY"
+    },
+    "python:S2053": {
+      "minutes": 30,
+      "severity": "CRITICAL",
+      "type": "VULNERABILITY"
+    },
+    "python:S8405": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "CODE_SMELL"
+    },
+    "python:S8414": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "CODE_SMELL"
+    },
+    "python:S6327": {
+      "minutes": 45,
+      "severity": "MINOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S8502": {
+      "minutes": 2,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S6321": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S5247": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S6330": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S6332": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S5122": {
+      "minutes": 240,
+      "severity": "MAJOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S2092": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "VULNERABILITY"
+    },
+    "python:S1172": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S7503": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "pythonbugs:S2259": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "pythonbugs:S2589": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "pythonbugs:S5633": {
+      "minutes": 20,
+      "severity": "BLOCKER",
+      "type": "BUG"
+    },
+    "pythonbugs:S6899": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "pythonbugs:S6417": {
+      "minutes": 15,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "pythonbugs:S6466": {
+      "minutes": 10,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "pythonbugs:S6465": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "pythonbugs:S6886": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "pythonbugs:S2583": {
+      "minutes": 15,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "pythonbugs:S3518": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "pythonbugs:S6464": {
+      "minutes": 20,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "python:S9088": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S9137": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S9136": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S9002": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S9106": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S9100": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S1862": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S1142": {
+      "minutes": 20,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:FileComplexity": {
+      "minutes": 30,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S1226": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "BUG"
+    },
+    "python:S1656": {
+      "minutes": 3,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S1244": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S2201": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S1764": {
+      "minutes": 2,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S1763": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S1871": {
+      "minutes": 10,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S1192": {
+      "minutes": 2,
+      "severity": "CRITICAL",
+      "type": "CODE_SMELL"
+    },
+    "python:S1143": {
+      "minutes": 30,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "python:S1135": {
+      "minutes": 0,
+      "severity": "INFO",
+      "type": "CODE_SMELL"
+    },
+    "python:S1134": {
+      "minutes": 0,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S125": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S1131": {
+      "minutes": 1,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S3415": {
+      "minutes": 2,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5958": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S9081": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S9080": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S5778": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S9134": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "python:S9117": {
+      "minutes": 2,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S8997": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S1110": {
+      "minutes": 1,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S9074": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S9073": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S9078": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S9077": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S9076": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S9075": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S9084": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S9083": {
+      "minutes": 1,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S9116": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S8410": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S9001": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S9000": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S8953": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "python:S8411": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S8999": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S8998": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S8992": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S8993": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S8994": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "python:S5863": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "BUG"
+    },
+    "python:S5779": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "python:S8966": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "python:S8963": {
+      "minutes": 5,
+      "severity": "MAJOR",
+      "type": "CODE_SMELL"
+    },
+    "python:S2187": {
+      "minutes": 5,
+      "severity": "BLOCKER",
+      "type": "CODE_SMELL"
+    },
+    "python:S8973": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "python:S8974": {
+      "minutes": 5,
+      "severity": "CRITICAL",
+      "type": "BUG"
+    },
+    "python:S8971": {
+      "minutes": 5,
+      "severity": "MINOR",
+      "type": "BUG"
+    },
     "pythonsecurity:S8702": {
       "minutes": 30,
       "severity": "MAJOR",
@@ -50,55 +865,15 @@
       "severity": "CRITICAL",
       "type": "VULNERABILITY"
     },
-    "python:S4502": {
-      "minutes": 5,
-      "severity": "CRITICAL",
-      "type": "VULNERABILITY"
-    },
-    "python:S1110": {
-      "minutes": 2,
-      "severity": "MINOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S4507": {
-      "minutes": 1,
-      "severity": "MINOR",
-      "type": "VULNERABILITY"
-    },
-    "python:S5958": {
-      "minutes": 5,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S5778": {
-      "minutes": 5,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S5542": {
-      "minutes": 20,
-      "severity": "CRITICAL",
-      "type": "VULNERABILITY"
-    },
     "python:S8900": {
       "minutes": 5,
       "severity": "MAJOR",
       "type": "CODE_SMELL"
     },
-    "python:S2245": {
-      "minutes": 10,
-      "severity": "MAJOR",
-      "type": "VULNERABILITY"
-    },
     "python:S8903": {
       "minutes": 5,
       "severity": "MAJOR",
       "type": "CODE_SMELL"
-    },
-    "python:S3330": {
-      "minutes": 10,
-      "severity": "MINOR",
-      "type": "VULNERABILITY"
     },
     "python:S8904": {
       "minutes": 5,
@@ -114,21 +889,6 @@
       "minutes": 5,
       "severity": "MAJOR",
       "type": "BUG"
-    },
-    "python:S4790": {
-      "minutes": 30,
-      "severity": "CRITICAL",
-      "type": "VULNERABILITY"
-    },
-    "python:S1764": {
-      "minutes": 2,
-      "severity": "MAJOR",
-      "type": "BUG"
-    },
-    "python:S6249": {
-      "minutes": 10,
-      "severity": "MINOR",
-      "type": "VULNERABILITY"
     },
     "python:S8786": {
       "minutes": 20,
@@ -150,39 +910,14 @@
       "severity": "BLOCKER",
       "type": "VULNERABILITY"
     },
-    "python:S5332": {
-      "minutes": 30,
-      "severity": "MINOR",
-      "type": "VULNERABILITY"
-    },
-    "python:S2077": {
-      "minutes": 20,
-      "severity": "MAJOR",
-      "type": "VULNERABILITY"
-    },
     "python:S8714": {
       "minutes": 5,
       "severity": "MINOR",
       "type": "CODE_SMELL"
     },
-    "python:S6327": {
-      "minutes": 45,
-      "severity": "MINOR",
-      "type": "VULNERABILITY"
-    },
     "python:S6329": {
       "minutes": 30,
       "severity": "BLOCKER",
-      "type": "VULNERABILITY"
-    },
-    "python:S5247": {
-      "minutes": 5,
-      "severity": "MAJOR",
-      "type": "VULNERABILITY"
-    },
-    "pythonsecurity:S5144": {
-      "minutes": 30,
-      "severity": "MAJOR",
       "type": "VULNERABILITY"
     },
     "python:S1721": {
@@ -210,16 +945,6 @@
       "severity": "BLOCKER",
       "type": "CODE_SMELL"
     },
-    "python:S3752": {
-      "minutes": 5,
-      "severity": "MINOR",
-      "type": "VULNERABILITY"
-    },
-    "python:S8411": {
-      "minutes": 5,
-      "severity": "BLOCKER",
-      "type": "BUG"
-    },
     "python:S8508": {
       "minutes": 5,
       "severity": "BLOCKER",
@@ -228,11 +953,6 @@
     "python:S6333": {
       "minutes": 15,
       "severity": "BLOCKER",
-      "type": "VULNERABILITY"
-    },
-    "python:S5122": {
-      "minutes": 240,
-      "severity": "MAJOR",
       "type": "VULNERABILITY"
     },
     "pythonenterprise:S7698": {
@@ -245,40 +965,10 @@
       "severity": "MAJOR",
       "type": "VULNERABILITY"
     },
-    "pythonsecurity:S3649": {
-      "minutes": 30,
-      "severity": "BLOCKER",
-      "type": "VULNERABILITY"
-    },
-    "pythonsecurity:S6350": {
-      "minutes": 30,
-      "severity": "MAJOR",
-      "type": "VULNERABILITY"
-    },
     "python:S6985": {
       "minutes": 15,
       "severity": "CRITICAL",
       "type": "VULNERABILITY"
-    },
-    "python:S4426": {
-      "minutes": 2,
-      "severity": "CRITICAL",
-      "type": "VULNERABILITY"
-    },
-    "python:S2257": {
-      "minutes": 480,
-      "severity": "CRITICAL",
-      "type": "VULNERABILITY"
-    },
-    "python:S2612": {
-      "minutes": 5,
-      "severity": "MAJOR",
-      "type": "VULNERABILITY"
-    },
-    "python:S1313": {
-      "minutes": 30,
-      "severity": "MINOR",
-      "type": "CODE_SMELL"
     },
     "python:S4828": {
       "minutes": 30,
@@ -295,11 +985,6 @@
       "severity": "BLOCKER",
       "type": "VULNERABILITY"
     },
-    "python:S6275": {
-      "minutes": 30,
-      "severity": "MAJOR",
-      "type": "VULNERABILITY"
-    },
     "python:S6270": {
       "minutes": 5,
       "severity": "BLOCKER",
@@ -307,11 +992,6 @@
     },
     "python:S8572": {
       "minutes": 5,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S5042": {
-      "minutes": 10,
       "severity": "MAJOR",
       "type": "CODE_SMELL"
     },
@@ -335,38 +1015,8 @@
       "severity": "BLOCKER",
       "type": "BUG"
     },
-    "python:S2068": {
-      "minutes": 30,
-      "severity": "MAJOR",
-      "type": "VULNERABILITY"
-    },
-    "python:S6303": {
-      "minutes": 10,
-      "severity": "MAJOR",
-      "type": "VULNERABILITY"
-    },
     "python:S6302": {
       "minutes": 5,
-      "severity": "BLOCKER",
-      "type": "VULNERABILITY"
-    },
-    "python:S6308": {
-      "minutes": 10,
-      "severity": "MAJOR",
-      "type": "VULNERABILITY"
-    },
-    "python:S6319": {
-      "minutes": 10,
-      "severity": "MAJOR",
-      "type": "VULNERABILITY"
-    },
-    "python:S5443": {
-      "minutes": 30,
-      "severity": "CRITICAL",
-      "type": "VULNERABILITY"
-    },
-    "python:S6418": {
-      "minutes": 30,
       "severity": "BLOCKER",
       "type": "VULNERABILITY"
     },
@@ -385,11 +1035,6 @@
       "severity": "MAJOR",
       "type": "VULNERABILITY"
     },
-    "python:S8410": {
-      "minutes": 5,
-      "severity": "MINOR",
-      "type": "CODE_SMELL"
-    },
     "python:S8505": {
       "minutes": 5,
       "severity": "BLOCKER",
@@ -403,11 +1048,6 @@
     "python:S8500": {
       "minutes": 5,
       "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S8502": {
-      "minutes": 2,
-      "severity": "MINOR",
       "type": "CODE_SMELL"
     },
     "python:S8503": {
@@ -460,25 +1100,10 @@
       "severity": "MAJOR",
       "type": "CODE_SMELL"
     },
-    "python:S6330": {
-      "minutes": 10,
-      "severity": "MAJOR",
-      "type": "VULNERABILITY"
-    },
-    "python:S6332": {
-      "minutes": 10,
-      "severity": "MAJOR",
-      "type": "VULNERABILITY"
-    },
     "python:S8510": {
       "minutes": 2,
       "severity": "CRITICAL",
       "type": "CODE_SMELL"
-    },
-    "python:S2092": {
-      "minutes": 5,
-      "severity": "MINOR",
-      "type": "VULNERABILITY"
     },
     "python:S6863": {
       "minutes": 5,
@@ -695,123 +1320,8 @@
       "severity": "CRITICAL",
       "type": "CODE_SMELL"
     },
-    "pythonsecurity:S6547": {
-      "minutes": 30,
-      "severity": "MAJOR",
-      "type": "VULNERABILITY"
-    },
-    "pythonsecurity:S6549": {
-      "minutes": 30,
-      "severity": "MAJOR",
-      "type": "VULNERABILITY"
-    },
-    "pythonsecurity:S5135": {
-      "minutes": 30,
-      "severity": "BLOCKER",
-      "type": "VULNERABILITY"
-    },
-    "pythonsecurity:S5334": {
-      "minutes": 30,
-      "severity": "BLOCKER",
-      "type": "VULNERABILITY"
-    },
-    "pythonsecurity:S5131": {
-      "minutes": 30,
-      "severity": "BLOCKER",
-      "type": "VULNERABILITY"
-    },
-    "pythonsecurity:S5496": {
-      "minutes": 30,
-      "severity": "BLOCKER",
-      "type": "VULNERABILITY"
-    },
-    "pythonsecurity:S2083": {
-      "minutes": 30,
-      "severity": "BLOCKER",
-      "type": "VULNERABILITY"
-    },
-    "pythonsecurity:S6287": {
-      "minutes": 30,
-      "severity": "MAJOR",
-      "type": "VULNERABILITY"
-    },
-    "pythonsecurity:S6680": {
-      "minutes": 5,
-      "severity": "CRITICAL",
-      "type": "VULNERABILITY"
-    },
-    "pythonsecurity:S2631": {
-      "minutes": 60,
-      "severity": "CRITICAL",
-      "type": "VULNERABILITY"
-    },
-    "pythonsecurity:S2078": {
-      "minutes": 30,
-      "severity": "BLOCKER",
-      "type": "VULNERABILITY"
-    },
-    "pythonsecurity:S5146": {
-      "minutes": 30,
-      "severity": "BLOCKER",
-      "type": "VULNERABILITY"
-    },
-    "pythonsecurity:S5145": {
-      "minutes": 30,
-      "severity": "MINOR",
-      "type": "VULNERABILITY"
-    },
-    "pythonsecurity:S2076": {
-      "minutes": 30,
-      "severity": "BLOCKER",
-      "type": "VULNERABILITY"
-    },
-    "pythonsecurity:S6776": {
-      "minutes": 30,
-      "severity": "MINOR",
-      "type": "VULNERABILITY"
-    },
-    "pythonsecurity:S5147": {
-      "minutes": 30,
-      "severity": "BLOCKER",
-      "type": "VULNERABILITY"
-    },
-    "pythonsecurity:S6639": {
-      "minutes": 5,
-      "severity": "MAJOR",
-      "type": "VULNERABILITY"
-    },
-    "pythonsecurity:S6839": {
-      "minutes": 30,
-      "severity": "BLOCKER",
-      "type": "VULNERABILITY"
-    },
-    "pythonsecurity:S7044": {
-      "minutes": 30,
-      "severity": "MAJOR",
-      "type": "VULNERABILITY"
-    },
-    "pythonsecurity:S6096": {
-      "minutes": 30,
-      "severity": "BLOCKER",
-      "type": "VULNERABILITY"
-    },
-    "pythonsecurity:S2091": {
-      "minutes": 30,
-      "severity": "BLOCKER",
-      "type": "VULNERABILITY"
-    },
     "pythonarchitecture:S8464": {
       "minutes": 5,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S1135": {
-      "minutes": 0,
-      "severity": "INFO",
-      "type": "CODE_SMELL"
-    },
-    "python:S1134": {
-      "minutes": 0,
       "severity": "MAJOR",
       "type": "CODE_SMELL"
     },
@@ -824,11 +1334,6 @@
       "minutes": 5,
       "severity": "MINOR",
       "type": "CODE_SMELL"
-    },
-    "python:S2115": {
-      "minutes": 45,
-      "severity": "BLOCKER",
-      "type": "VULNERABILITY"
     },
     "python:S6711": {
       "minutes": 5,
@@ -865,16 +1370,6 @@
       "severity": "MAJOR",
       "type": "CODE_SMELL"
     },
-    "python:S1143": {
-      "minutes": 30,
-      "severity": "CRITICAL",
-      "type": "BUG"
-    },
-    "python:S3329": {
-      "minutes": 15,
-      "severity": "CRITICAL",
-      "type": "VULNERABILITY"
-    },
     "python:S5747": {
       "minutes": 10,
       "severity": "CRITICAL",
@@ -900,11 +1395,6 @@
       "severity": "MAJOR",
       "type": "BUG"
     },
-    "python:ExecStatementUsage": {
-      "minutes": 10,
-      "severity": "BLOCKER",
-      "type": "CODE_SMELL"
-    },
     "python:S7483": {
       "minutes": 5,
       "severity": "MAJOR",
@@ -914,11 +1404,6 @@
       "minutes": 5,
       "severity": "CRITICAL",
       "type": "CODE_SMELL"
-    },
-    "python:S2201": {
-      "minutes": 5,
-      "severity": "MAJOR",
-      "type": "BUG"
     },
     "python:S5713": {
       "minutes": 1,
@@ -995,21 +1480,6 @@
       "severity": "CRITICAL",
       "type": "BUG"
     },
-    "python:InequalityUsage": {
-      "minutes": 5,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S1244": {
-      "minutes": 5,
-      "severity": "MAJOR",
-      "type": "BUG"
-    },
-    "python:S6377": {
-      "minutes": 15,
-      "severity": "MAJOR",
-      "type": "VULNERABILITY"
-    },
     "python:S5720": {
       "minutes": 5,
       "severity": "CRITICAL",
@@ -1023,11 +1493,6 @@
     "python:S5727": {
       "minutes": 10,
       "severity": "CRITICAL",
-      "type": "CODE_SMELL"
-    },
-    "python:S1481": {
-      "minutes": 5,
-      "severity": "MINOR",
       "type": "CODE_SMELL"
     },
     "python:S5655": {
@@ -1070,16 +1535,6 @@
       "severity": "BLOCKER",
       "type": "BUG"
     },
-    "python:S5659": {
-      "minutes": 30,
-      "severity": "CRITICAL",
-      "type": "VULNERABILITY"
-    },
-    "python:S1854": {
-      "minutes": 1,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
     "python:S5890": {
       "minutes": 5,
       "severity": "MAJOR",
@@ -1094,11 +1549,6 @@
       "minutes": 5,
       "severity": "CRITICAL",
       "type": "CODE_SMELL"
-    },
-    "python:S5547": {
-      "minutes": 15,
-      "severity": "CRITICAL",
-      "type": "VULNERABILITY"
     },
     "python:S1186": {
       "minutes": 5,
@@ -1164,11 +1614,6 @@
       "minutes": 1,
       "severity": "MAJOR",
       "type": "CODE_SMELL"
-    },
-    "python:S4423": {
-      "minutes": 2,
-      "severity": "CRITICAL",
-      "type": "VULNERABILITY"
     },
     "python:S5754": {
       "minutes": 5,
@@ -1325,11 +1770,6 @@
       "severity": "MAJOR",
       "type": "CODE_SMELL"
     },
-    "python:S4433": {
-      "minutes": 15,
-      "severity": "CRITICAL",
-      "type": "VULNERABILITY"
-    },
     "python:S7941": {
       "minutes": 2,
       "severity": "MINOR",
@@ -1354,11 +1794,6 @@
       "minutes": 2,
       "severity": "MAJOR",
       "type": "CODE_SMELL"
-    },
-    "python:S5527": {
-      "minutes": 5,
-      "severity": "CRITICAL",
-      "type": "VULNERABILITY"
     },
     "python:S935": {
       "minutes": 5,
@@ -1425,20 +1860,10 @@
       "severity": "MAJOR",
       "type": "BUG"
     },
-    "python:S6785": {
-      "minutes": 480,
-      "severity": "CRITICAL",
-      "type": "VULNERABILITY"
-    },
     "python:S7512": {
       "minutes": 1,
       "severity": "MAJOR",
       "type": "CODE_SMELL"
-    },
-    "python:S6786": {
-      "minutes": 60,
-      "severity": "MAJOR",
-      "type": "VULNERABILITY"
     },
     "python:S112": {
       "minutes": 20,
@@ -1475,11 +1900,6 @@
       "severity": "MINOR",
       "type": "CODE_SMELL"
     },
-    "python:S6781": {
-      "minutes": 30,
-      "severity": "BLOCKER",
-      "type": "VULNERABILITY"
-    },
     "python:S6662": {
       "minutes": 5,
       "severity": "MAJOR",
@@ -1499,11 +1919,6 @@
       "minutes": 20,
       "severity": "MAJOR",
       "type": "CODE_SMELL"
-    },
-    "python:S6437": {
-      "minutes": 60,
-      "severity": "BLOCKER",
-      "type": "VULNERABILITY"
     },
     "python:S6799": {
       "minutes": 5,
@@ -1535,11 +1950,6 @@
       "severity": "MAJOR",
       "type": "CODE_SMELL"
     },
-    "python:S5344": {
-      "minutes": 30,
-      "severity": "CRITICAL",
-      "type": "VULNERABILITY"
-    },
     "python:S6796": {
       "minutes": 5,
       "severity": "MAJOR",
@@ -1559,11 +1969,6 @@
       "minutes": 15,
       "severity": "CRITICAL",
       "type": "CODE_SMELL"
-    },
-    "python:S2755": {
-      "minutes": 15,
-      "severity": "BLOCKER",
-      "type": "VULNERABILITY"
     },
     "python:S2876": {
       "minutes": 10,
@@ -1615,11 +2020,6 @@
       "severity": "MINOR",
       "type": "CODE_SMELL"
     },
-    "python:S1871": {
-      "minutes": 10,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
     "python:S6883": {
       "minutes": 5,
       "severity": "CRITICAL",
@@ -1655,19 +2055,9 @@
       "severity": "MAJOR",
       "type": "BUG"
     },
-    "python:S5439": {
-      "minutes": 5,
-      "severity": "BLOCKER",
-      "type": "VULNERABILITY"
-    },
     "python:S7619": {
       "minutes": 5,
       "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S1192": {
-      "minutes": 2,
-      "severity": "CRITICAL",
       "type": "CODE_SMELL"
     },
     "python:S6882": {
@@ -1685,11 +2075,6 @@
       "severity": "BLOCKER",
       "type": "BUG"
     },
-    "python:S7503": {
-      "minutes": 5,
-      "severity": "MINOR",
-      "type": "CODE_SMELL"
-    },
     "python:S7504": {
       "minutes": 5,
       "severity": "MINOR",
@@ -1699,11 +2084,6 @@
       "minutes": 5,
       "severity": "BLOCKER",
       "type": "VULNERABILITY"
-    },
-    "python:S1763": {
-      "minutes": 5,
-      "severity": "MAJOR",
-      "type": "BUG"
     },
     "python:S6659": {
       "minutes": 5,
@@ -1719,11 +2099,6 @@
       "minutes": 5,
       "severity": "MAJOR",
       "type": "CODE_SMELL"
-    },
-    "python:S6779": {
-      "minutes": 30,
-      "severity": "BLOCKER",
-      "type": "VULNERABILITY"
     },
     "python:S7506": {
       "minutes": 5,
@@ -1795,16 +2170,6 @@
       "severity": "CRITICAL",
       "type": "CODE_SMELL"
     },
-    "python:S2053": {
-      "minutes": 30,
-      "severity": "CRITICAL",
-      "type": "VULNERABILITY"
-    },
-    "python:S8405": {
-      "minutes": 5,
-      "severity": "BLOCKER",
-      "type": "CODE_SMELL"
-    },
     "python:S6900": {
       "minutes": 5,
       "severity": "CRITICAL",
@@ -1852,11 +2217,6 @@
     },
     "python:S8413": {
       "minutes": 2,
-      "severity": "BLOCKER",
-      "type": "CODE_SMELL"
-    },
-    "python:S8414": {
-      "minutes": 5,
       "severity": "BLOCKER",
       "type": "CODE_SMELL"
     },
@@ -1930,20 +2290,10 @@
       "severity": "MAJOR",
       "type": "CODE_SMELL"
     },
-    "python:S6321": {
-      "minutes": 5,
-      "severity": "MINOR",
-      "type": "VULNERABILITY"
-    },
     "python:S3985": {
       "minutes": 2,
       "severity": "MAJOR",
       "type": "CODE_SMELL"
-    },
-    "python:S4830": {
-      "minutes": 5,
-      "severity": "CRITICAL",
-      "type": "VULNERABILITY"
     },
     "python:S3862": {
       "minutes": 5,
@@ -1977,11 +2327,6 @@
     },
     "python:S6331": {
       "minutes": 5,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
-    "python:NoSonar": {
-      "minutes": 1,
       "severity": "MAJOR",
       "type": "CODE_SMELL"
     },
@@ -2020,18 +2365,8 @@
       "severity": "CRITICAL",
       "type": "CODE_SMELL"
     },
-    "python:S138": {
-      "minutes": 20,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
     "python:S104": {
       "minutes": 60,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S1172": {
-      "minutes": 5,
       "severity": "MAJOR",
       "type": "CODE_SMELL"
     },
@@ -2039,11 +2374,6 @@
       "minutes": 10,
       "severity": "INFO",
       "type": "CODE_SMELL"
-    },
-    "pythonbugs:S3518": {
-      "minutes": 5,
-      "severity": "CRITICAL",
-      "type": "BUG"
     },
     "python:S2733": {
       "minutes": 5,
@@ -2095,11 +2425,6 @@
       "severity": "BLOCKER",
       "type": "CODE_SMELL"
     },
-    "python:S1656": {
-      "minutes": 3,
-      "severity": "MAJOR",
-      "type": "BUG"
-    },
     "python:S6553": {
       "minutes": 5,
       "severity": "MAJOR",
@@ -2130,30 +2455,15 @@
       "severity": "MAJOR",
       "type": "CODE_SMELL"
     },
-    "python:FileComplexity": {
-      "minutes": 30,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
     "python:S3827": {
       "minutes": 10,
       "severity": "BLOCKER",
       "type": "BUG"
     },
-    "python:S1451": {
-      "minutes": 5,
-      "severity": "BLOCKER",
-      "type": "CODE_SMELL"
-    },
     "python:S3516": {
       "minutes": 30,
       "severity": "BLOCKER",
       "type": "CODE_SMELL"
-    },
-    "python:S1226": {
-      "minutes": 5,
-      "severity": "MINOR",
-      "type": "BUG"
     },
     "python:S2761": {
       "minutes": 5,
@@ -2180,62 +2490,7 @@
       "severity": "BLOCKER",
       "type": "BUG"
     },
-    "pythonbugs:S5633": {
-      "minutes": 20,
-      "severity": "BLOCKER",
-      "type": "BUG"
-    },
-    "pythonbugs:S6899": {
-      "minutes": 5,
-      "severity": "CRITICAL",
-      "type": "BUG"
-    },
-    "pythonbugs:S6886": {
-      "minutes": 5,
-      "severity": "CRITICAL",
-      "type": "BUG"
-    },
-    "pythonbugs:S2589": {
-      "minutes": 10,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
-    "pythonbugs:S6417": {
-      "minutes": 15,
-      "severity": "MAJOR",
-      "type": "BUG"
-    },
-    "pythonbugs:S6466": {
-      "minutes": 10,
-      "severity": "CRITICAL",
-      "type": "BUG"
-    },
-    "pythonbugs:S2259": {
-      "minutes": 10,
-      "severity": "MAJOR",
-      "type": "BUG"
-    },
-    "pythonbugs:S2583": {
-      "minutes": 15,
-      "severity": "MAJOR",
-      "type": "BUG"
-    },
     "python:S139": {
-      "minutes": 1,
-      "severity": "MINOR",
-      "type": "CODE_SMELL"
-    },
-    "pythonbugs:S6465": {
-      "minutes": 5,
-      "severity": "CRITICAL",
-      "type": "BUG"
-    },
-    "pythonbugs:S6464": {
-      "minutes": 20,
-      "severity": "CRITICAL",
-      "type": "BUG"
-    },
-    "python:S1131": {
       "minutes": 1,
       "severity": "MINOR",
       "type": "CODE_SMELL"
@@ -2244,206 +2499,11 @@
       "minutes": 5,
       "severity": "MAJOR",
       "type": "CODE_SMELL"
-    },
-    "python:S125": {
-      "minutes": 5,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S113": {
-      "minutes": 1,
-      "severity": "MINOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S5856": {
-      "minutes": 15,
-      "severity": "CRITICAL",
-      "type": "BUG"
-    },
-    "python:S5855": {
-      "minutes": 5,
-      "severity": "MAJOR",
-      "type": "BUG"
-    },
-    "python:S5850": {
-      "minutes": 10,
-      "severity": "MAJOR",
-      "type": "BUG"
-    },
-    "python:S5857": {
-      "minutes": 3,
-      "severity": "MINOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S1940": {
-      "minutes": 2,
-      "severity": "MINOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S1142": {
-      "minutes": 20,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S5869": {
-      "minutes": 5,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S5868": {
-      "minutes": 5,
-      "severity": "MAJOR",
-      "type": "BUG"
-    },
-    "python:S1700": {
-      "minutes": 10,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S6395": {
-      "minutes": 5,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S6035": {
-      "minutes": 5,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S6397": {
-      "minutes": 5,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S2325": {
-      "minutes": 5,
-      "severity": "MINOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S6002": {
-      "minutes": 20,
-      "severity": "CRITICAL",
-      "type": "BUG"
-    },
-    "python:S6001": {
-      "minutes": 10,
-      "severity": "CRITICAL",
-      "type": "BUG"
-    },
-    "python:S6019": {
-      "minutes": 10,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S5842": {
-      "minutes": 5,
-      "severity": "MINOR",
-      "type": "BUG"
-    },
-    "python:S5603": {
-      "minutes": 5,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S3358": {
-      "minutes": 5,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S1862": {
-      "minutes": 10,
-      "severity": "MAJOR",
-      "type": "BUG"
-    },
-    "python:S5996": {
-      "minutes": 10,
-      "severity": "CRITICAL",
-      "type": "BUG"
-    },
-    "python:S5994": {
-      "minutes": 15,
-      "severity": "CRITICAL",
-      "type": "BUG"
-    },
-    "python:S1707": {
-      "minutes": 2,
-      "severity": "MINOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S1607": {
-      "minutes": 2,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S1722": {
-      "minutes": 2,
-      "severity": "MINOR",
-      "type": "CODE_SMELL"
-    },
-    "python:ParsingError": {
-      "minutes": 30,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
-    "python:LineLength": {
-      "minutes": 1,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S108": {
-      "minutes": 5,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
-    "python:PrintStatementUsage": {
-      "minutes": 5,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S100": {
-      "minutes": 5,
-      "severity": "MINOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S1578": {
-      "minutes": 10,
-      "severity": "MINOR",
-      "type": "CODE_SMELL"
-    },
-    "python:OneStatementPerLine": {
-      "minutes": 1,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S6326": {
-      "minutes": 5,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S6323": {
-      "minutes": 5,
-      "severity": "MAJOR",
-      "type": "BUG"
-    },
-    "python:S4144": {
-      "minutes": 15,
-      "severity": "MAJOR",
-      "type": "CODE_SMELL"
-    },
-    "python:S4143": {
-      "minutes": 5,
-      "severity": "MAJOR",
-      "type": "BUG"
-    },
-    "python:S5361": {
-      "minutes": 2,
-      "severity": "CRITICAL",
-      "type": "CODE_SMELL"
     }
   },
   "source": "SonarCloud API",
   "api_url_index": 1,
-  "fetched_at": "2026-07-11T22:26:12.731674",
+  "fetched_at": "2026-10-28T22:11:55.425292",
   "used_fallback": false,
-  "count": 488
+  "count": 500
 }

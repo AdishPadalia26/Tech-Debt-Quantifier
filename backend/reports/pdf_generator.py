@@ -7,6 +7,7 @@ import re
 from datetime import datetime
 from io import BytesIO
 from typing import Any
+from xml.sax.saxutils import escape
 
 from reportlab.lib.colors import HexColor
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT
@@ -222,6 +223,47 @@ class ColorRect(Flowable):
         return available_width, self.rect_height
 
 
+def _fmt_usd(value: Any) -> str:
+    """Format a number as whole-dollar USD."""
+    return f"${_safe_float(value):,.0f}"
+
+
+def _estimate_notes(analysis: dict[str, Any], result: dict[str, Any]) -> list[str]:
+    """Build optional estimate-quality lines; empty when keys are absent."""
+
+    def pick(key: str) -> Any:
+        return analysis.get(key) if analysis.get(key) is not None else result.get(key)
+
+    notes: list[str] = []
+    rng = pick("total_cost_range")
+    if isinstance(rng, dict) and rng.get("p10") is not None and rng.get("p90") is not None:
+        notes.append(
+            f"Likely range: {_fmt_usd(rng.get('p10'))} - {_fmt_usd(rng.get('p90'))}"
+        )
+    stats = pick("estimation_stats")
+    if isinstance(stats, dict) and stats.get("total"):
+        line = f"LLM estimated {stats.get('llm', 0)} / {stats.get('total', 0)} items"
+        if _safe_float(stats.get("fallback_ratio")) > 0.1:
+            line += " (high share of formula fallback estimates)"
+        notes.append(escape(line))
+    non_principal = pick("non_principal_cost")
+    if isinstance(non_principal, dict):
+        extra = sum(_safe_float(v) for v in non_principal.values())
+        if extra > 0:
+            notes.append(
+                "Test, docs and example code excluded from total "
+                f"({_fmt_usd(extra)} reported separately)"
+            )
+    warnings = pick("warnings")
+    if isinstance(warnings, list):
+        for w in warnings:
+            notes.append(f"<b>Warning:</b> {escape(str(w))}")
+    version = pick("model_version")
+    if version:
+        notes.append(f"Model version: {escape(str(version))}")
+    return notes
+
+
 def generate_pdf_report(result: dict[str, Any]) -> bytes:
     """Generate a professional dark-theme PDF report and return raw bytes."""
     result, analysis = _merged_payload(result)
@@ -392,7 +434,15 @@ def generate_pdf_report(result: dict[str, Any]) -> bytes:
         )
     )
     story.append(kpi_table)
-    story.append(Spacer(1, 6 * mm))
+    story.append(Spacer(1, 2 * mm))
+    for note in _estimate_notes(analysis, result):
+        story.append(
+            Paragraph(
+                note,
+                S("EstNote", fontSize=7.5, textColor=C_MUTED, leading=11),
+            )
+        )
+    story.append(Spacer(1, 4 * mm))
 
     story.append(Paragraph("Executive Summary", s_h2))
     story.append(HRFlowable(width="100%", thickness=0.5, color=C_BORDER, spaceAfter=4))
@@ -865,13 +915,15 @@ def generate_pdf_report(result: dict[str, Any]) -> bytes:
     story.append(HRFlowable(width="100%", thickness=0.3, color=C_BORDER, spaceBefore=6))
     data_sources = analysis.get("data_sources") or {}
     source_parts = [str(repo_url), generated]
+    src_text = ""
     if isinstance(data_sources, dict) and data_sources:
-        source_parts.insert(0, "Data sources: " + " · ".join(f"{k}:{v}" for k, v in data_sources.items()))
-    else:
-        source_parts.insert(
-            0,
-            "Data sources: " + " · ".join(analysis.get("data_sources_used") or ["benchmarks:live", "hourly_rates:live"]),
-        )
+        src_text = " · ".join(f"{k}: {v}" for k, v in data_sources.items())
+    elif isinstance(data_sources, list) and data_sources:
+        src_text = " · ".join(str(v) for v in data_sources)
+    elif analysis.get("data_sources_used"):
+        src_text = " · ".join(str(v) for v in analysis["data_sources_used"])
+    if src_text:
+        source_parts.insert(0, "Data sources: " + escape(src_text))
     story.append(
         Paragraph(
             "  ·  ".join(source_parts),

@@ -1,34 +1,22 @@
 'use client';
 
+import { formatHours, formatUsd, severityChip } from '@/lib/format';
 import { ModuleSummaryDetail } from '@/types';
 
 interface Props {
   modules: ModuleSummaryDetail[];
 }
 
-function severityTone(severity: string) {
-  switch (severity) {
-    case 'critical':
-      return 'text-red-400';
-    case 'high':
-      return 'text-orange-400';
-    case 'medium':
-      return 'text-yellow-400';
-    default:
-      return 'text-green-400';
-  }
-}
-
 function ownershipTone(risk?: string | null) {
   switch (risk) {
     case 'critical':
-      return 'text-red-400';
+      return 'text-severity-critical';
     case 'high':
-      return 'text-orange-400';
+      return 'text-severity-high';
     case 'medium':
-      return 'text-yellow-400';
+      return 'text-severity-medium';
     default:
-      return 'text-gray-400';
+      return 'text-muted-foreground';
   }
 }
 
@@ -36,63 +24,61 @@ export default function ModuleRiskList({ modules }: Props) {
   const topModules = modules.slice(0, 6);
 
   return (
-    <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
-      <div className="flex items-center justify-between mb-4">
+    <section className="min-w-0 rounded-xl border border-border bg-card p-6">
+      <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
         <div>
-          <h3 className="text-lg font-semibold text-white">Module Risk Map</h3>
-          <p className="text-gray-400 text-sm">
-            Highest-cost modules from the current scan
-          </p>
+          <h2 className="text-lg font-semibold text-foreground">Riskiest modules</h2>
+          <p className="text-sm text-muted-foreground">Ranked by estimated cost</p>
         </div>
-        <p className="text-gray-500 text-sm">{modules.length} modules</p>
+        <p className="tabular text-sm text-muted-foreground">
+          {topModules.length} of {modules.length}
+        </p>
       </div>
 
       {topModules.length === 0 ? (
-        <p className="text-gray-400 text-sm">No module summaries available.</p>
+        <p className="text-sm text-muted-foreground">No module summaries available.</p>
       ) : (
-        <div className="space-y-3">
+        <ul className="divide-y divide-border">
           {topModules.map((module) => (
-            <div
-              key={module.module}
-              className="bg-gray-900/60 rounded-lg p-4 border border-gray-700"
-            >
-              <div className="flex items-start justify-between gap-3 mb-2">
-                <div>
-                  <p className="text-white font-medium">{module.module}</p>
-                  <p className="text-gray-500 text-sm">
-                    {module.finding_count} findings ·{' '}
-                    {module.total_effort_hours.toFixed(1)}h
-                  </p>
-                </div>
-                <p
-                  className={`text-sm font-medium ${severityTone(
+            <li key={module.module} className="py-3 first:pt-0 last:pb-0">
+              <div className="flex items-start justify-between gap-3">
+                <p className="min-w-0 break-all font-mono text-sm text-foreground">
+                  {module.module}
+                </p>
+                <span
+                  className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium capitalize ${severityChip(
                     module.max_severity
                   )}`}
                 >
                   {module.max_severity}
-                </p>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-purple-400">
-                  ${Math.round(module.total_cost_usd).toLocaleString()}
-                </span>
-                <span className="text-gray-500">
-                  confidence {Math.round(module.avg_confidence * 100)}%
                 </span>
               </div>
-              <div className="flex items-center justify-between text-xs mt-2">
-                <span className={ownershipTone(module.ownership_risk)}>
-                  ownership {module.ownership_risk || 'n/a'}
+              <div className="tabular mt-1.5 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
+                <span className="font-medium text-foreground">
+                  {formatUsd(module.total_cost_usd)}
                 </span>
-                <span className="text-gray-500">
-                  {module.owner_count ?? 0} owners · top share{' '}
+                <span className="text-muted-foreground">
+                  {module.finding_count.toLocaleString()} findings ·{' '}
+                  {formatHours(module.total_effort_hours)}
+                </span>
+                <span className="text-muted-foreground">
+                  {Math.round(module.avg_confidence * 100)}% confidence
+                </span>
+              </div>
+              {module.ownership_risk && (
+                <p className="tabular mt-1 text-xs text-muted-foreground">
+                  <span className={ownershipTone(module.ownership_risk)}>
+                    {module.ownership_risk} ownership risk
+                  </span>
+                  {' · '}
+                  {module.owner_count ?? 0} owners, top contributor{' '}
                   {Math.round((module.top_contributor_share ?? 0) * 100)}%
-                </span>
-              </div>
-            </div>
+                </p>
+              )}
+            </li>
           ))}
-        </div>
+        </ul>
       )}
-    </div>
+    </section>
   );
 }

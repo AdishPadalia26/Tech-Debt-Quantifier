@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from database.connection import SessionLocal
-from database.crud import save_scan
+from database.crud import save_scan, strip_secrets
 from mcp_server import REPOS_DIR
 from models.normalize import normalize_analysis_result
 from services.job_service import get_job, job_exists, update_job
@@ -230,12 +230,12 @@ async def _run_pipeline(
         raw_analysis = normalize_analysis_result(state.get("raw_analysis"))
         state["raw_analysis"] = raw_analysis
         state["status"] = "complete"
+        # Never persist the OAuth token (Redis job, cache, or DB raw_result).
+        state = strip_secrets(state)
 
-        update_job(job_id, status="complete", result=state)
-        update_progress(job_id, *PHASES[3])
-        update_job(job_id, progress=100, phase="Complete")
-        set_cached_result(github_url, state)
-
+        # Save the scan before marking the job complete, so clients that fetch
+        # results as soon as they see "complete" also get the scan_id.
+        scan_id = None
         analysis_data = state.get("raw_analysis") or state
         if analysis_data.get("total_cost_usd"):
             try:
@@ -249,11 +249,16 @@ async def _run_pipeline(
                     duration_seconds=duration,
                     user_id=user_id,
                 )
-                update_job(job_id, scan_id=saved_scan.id)
+                scan_id = saved_scan.id
                 logger.info("Scan saved to DB: %s", saved_scan.id)
                 db.close()
             except Exception as db_err:
                 logger.error("DB save failed (analysis still ok): %s", db_err)
+
+        update_job(job_id, status="complete", result=state, scan_id=scan_id)
+        update_progress(job_id, *PHASES[3])
+        update_job(job_id, progress=100, phase="Complete")
+        set_cached_result(github_url, state)
 
         logger.info("Job %s completed in %.1fs", job_id, duration)
     except TimeoutError as exc:

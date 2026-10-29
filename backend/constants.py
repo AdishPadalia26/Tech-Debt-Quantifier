@@ -21,12 +21,6 @@ CHURN_MULTIPLIERS: Final[list[tuple[int, float]]] = [
     (20, 3.0),
 ]
 
-HOURLY_RATES: Final[dict[str, float]] = {
-    "junior": 55.10,
-    "mid": 84.55,
-    "senior": 128.37,
-}
-
 DEBT_TYPE_TO_ROLE: Final[dict[str, str]] = {
     "architecture": "senior",
     "security": "senior",
@@ -35,8 +29,6 @@ DEBT_TYPE_TO_ROLE: Final[dict[str, str]] = {
     "test_debt": "junior",
     "documentation": "junior",
 }
-
-CISQ_COST_PER_FUNCTION: Final[float] = 310.0
 
 SONAR_SEVERITY_MINUTES: Final[dict[str, int]] = {
     "BLOCKER": 120,
@@ -171,3 +163,18 @@ TEST_DIR_NAMES: Final[set[str]] = {
 
 ARCHITECTURE_LOC_THRESHOLD: Final[int] = 400
 ARCHITECTURE_IMPORT_FANOUT_THRESHOLD: Final[int] = 10
+
+# Cited reference values live in data/reference_tables.py. Imported last so the
+# ``data`` package (which imports names above) never sees a partial module.
+from data.reference_tables import (  # noqa: E402
+    COST_PER_FUNCTION_USD,
+    HOURLY_RATE_TABLE,
+)
+
+# Loaded (fully burdened) hourly rates per level; see reference_tables.
+HOURLY_RATES: Final[dict[str, float]] = {
+    level: entry["value"] for level, entry in HOURLY_RATE_TABLE.items()
+}
+
+# Rough industry reference, not CISQ-verified (see reference_tables).
+CISQ_COST_PER_FUNCTION: Final[float] = COST_PER_FUNCTION_USD

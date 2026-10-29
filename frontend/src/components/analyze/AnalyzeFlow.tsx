@@ -1,12 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useReducer, useRef } from 'react';
-import { DollarSign, LayoutDashboard, ShieldAlert, Workflow } from 'lucide-react';
 
 import AnalyzeForm from '@/components/AnalyzeForm';
 import { ErrorBoundary } from '@/components/error-boundary';
 import ProgressBar from '@/components/ProgressBar';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -39,6 +37,25 @@ import {
 import { ResultsView } from './ResultsView';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+const METHOD_STEPS = [
+  {
+    title: 'Find',
+    description: 'Static analysis and git history flag complexity, duplication, security, test, and documentation debt.',
+  },
+  {
+    title: 'Size',
+    description: 'Each finding gets an estimate of realistic remediation hours.',
+  },
+  {
+    title: 'Adjust',
+    description: 'Hours are weighted by file churn, severity, and overall repository risk.',
+  },
+  {
+    title: 'Price',
+    description: 'Hours times a blended engineering rate for your stack gives cost per item, summed per repo.',
+  },
+];
 
 // ─── State & actions ──────────────────────────────────────────
 
@@ -209,75 +226,51 @@ export function AnalyzeFlow() {
 
   return (
     <>
-      {/* Hero — always visible */}
-      <section className="mb-8 grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
-        <div className="space-y-5">
-          <div className="space-y-4">
-            <Badge
-              variant="outline"
-              className="border-border bg-muted/20 text-muted-foreground"
-            >
-              Vercel-grade debt visibility for engineering teams
-            </Badge>
+      {/* Hero — only before a scan, so progress and results get the full page */}
+      {appState === 'idle' || appState === 'error' ? (
+        <section className="mb-10 grid items-start gap-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+          <div className="space-y-6">
             <div className="space-y-3">
-              <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">
+              <h1 className="max-w-2xl text-balance text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">
                 Quantify technical debt with executive clarity and engineering detail.
               </h1>
-              <p className="max-w-2xl text-base leading-7 text-muted-foreground">
+              <p className="max-w-xl text-pretty text-base leading-7 text-muted-foreground">
                 Scan a GitHub repository, turn hotspots into cost and effort signals, and move
                 directly into remediation, reporting, Slack, and Jira.
               </p>
             </div>
+            <AnalyzeForm onJobStarted={handleJobStarted} />
           </div>
-          <AnalyzeForm onJobStarted={handleJobStarted} />
-        </div>
 
-        <Card className="border-border bg-card">
-          <CardHeader>
-            <CardTitle>What ships in one scan</CardTitle>
-            <CardDescription>
-              Structured debt output designed for CTO reviews, team triage, and roadmap planning.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-3 sm:grid-cols-2">
-            {[
-              {
-                icon: DollarSign,
-                title: 'Debt economics',
-                description: 'Cost, effort, and ROI in business-ready terms.',
-              },
-              {
-                icon: ShieldAlert,
-                title: 'Risk signals',
-                description: 'Severity, confidence, and maintenance drag surfaced clearly.',
-              },
-              {
-                icon: Workflow,
-                title: 'Action planning',
-                description:
-                  'Priority actions, roadmap buckets, and exportable next steps.',
-              },
-              {
-                icon: LayoutDashboard,
-                title: 'Portfolio view',
-                description:
-                  'Trend and module views across multiple scans and repositories.',
-              },
-            ].map((item) => (
-              <div
-                key={item.title}
-                className="rounded-xl border border-border bg-muted/20 p-4"
-              >
-                <item.icon className="mb-3 size-4 text-primary" />
-                <p className="text-sm font-medium text-foreground">{item.title}</p>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                  {item.description}
-                </p>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      </section>
+          <aside
+            aria-labelledby="method-heading"
+            className="rounded-xl border border-border bg-card/60 p-6"
+          >
+            <h2 id="method-heading" className="text-sm font-medium text-foreground">
+              How the estimate is built
+            </h2>
+            <ol className="mt-4 divide-y divide-border">
+              {METHOD_STEPS.map((step, i) => (
+                <li key={step.title} className="flex gap-4 py-3 first:pt-0 last:pb-0">
+                  <span className="tabular mt-0.5 font-mono text-xs text-primary">
+                    {String(i + 1).padStart(2, '0')}
+                  </span>
+                  <div>
+                    <p className="text-sm font-medium text-foreground">{step.title}</p>
+                    <p className="mt-0.5 text-sm leading-6 text-muted-foreground">
+                      {step.description}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+            <p className="mt-4 border-t border-border pt-4 text-xs leading-5 text-muted-foreground">
+              Each finding in the report shows its own hours, multipliers, and confidence, so
+              you can challenge any line item.
+            </p>
+          </aside>
+        </section>
+      ) : null}
 
       {/* Analyzing skeleton */}
       {appState === 'analyzing' ? (
@@ -303,13 +296,13 @@ export function AnalyzeFlow() {
 
       {/* Error state */}
       {appState === 'error' ? (
-        <Card className="border-destructive/30 bg-card">
+        <Card role="alert" className="border-destructive/30 bg-card">
           <CardHeader>
             <CardTitle>Analysis failed</CardTitle>
             <CardDescription>{error}</CardDescription>
           </CardHeader>
           <CardContent>
-            <Button onClick={handleReset}>Try Again</Button>
+            <Button onClick={handleReset}>Try again</Button>
           </CardContent>
         </Card>
       ) : null}

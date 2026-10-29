@@ -42,7 +42,7 @@ export default function DebugResultsPage({ params }: { params: { jobId: string }
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-950 text-red-400 p-6">
+      <div className="w-full min-w-0 text-danger">
         <h1 className="text-xl font-bold mb-4">Debug Results</h1>
         <p>{error}</p>
       </div>
@@ -51,7 +51,7 @@ export default function DebugResultsPage({ params }: { params: { jobId: string }
 
   if (!data) {
     return (
-      <div className="min-h-screen bg-gray-950 text-purple-300 p-6">
+      <div className="w-full min-w-0 text-primary">
         <h1 className="text-xl font-bold mb-4">Debug Results</h1>
         <p>Loading {jobId}...</p>
       </div>
@@ -59,16 +59,16 @@ export default function DebugResultsPage({ params }: { params: { jobId: string }
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white p-6">
+    <div className="w-full min-w-0 text-foreground">
       <h1 className="text-2xl font-bold mb-4">
         Debug Results — {jobId}
       </h1>
 
       <section className="mb-6">
-        <h2 className="text-lg font-semibold mb-2 text-purple-300">
+        <h2 className="text-lg font-semibold mb-2 text-primary">
           raw_analysis snapshot
         </h2>
-        <pre className="bg-gray-900 border border-gray-800 rounded-lg p-4 text-xs overflow-auto">
+        <pre className="bg-card border border-border rounded-lg p-4 text-xs overflow-auto">
           {JSON.stringify({
             debt_score: data.raw_analysis?.debt_score,
             total_cost_usd: data.raw_analysis?.total_cost_usd,
@@ -79,19 +79,19 @@ export default function DebugResultsPage({ params }: { params: { jobId: string }
       </section>
 
       <section className="mb-6">
-        <h2 className="text-lg font-semibold mb-2 text-purple-300">
+        <h2 className="text-lg font-semibold mb-2 text-primary">
           first priority_action
         </h2>
-        <pre className="bg-gray-900 border border-gray-800 rounded-lg p-4 text-xs overflow-auto">
+        <pre className="bg-card border border-border rounded-lg p-4 text-xs overflow-auto">
           {JSON.stringify((data.priority_actions || []), null, 2)}
         </pre>
       </section>
 
       <section>
-        <h2 className="text-lg font-semibold mb-2 text-purple-300">
+        <h2 className="text-lg font-semibold mb-2 text-primary">
           full JSON
         </h2>
-        <pre className="bg-gray-900 border border-gray-800 rounded-lg p-4 text-xs overflow-auto">
+        <pre className="bg-card border border-border rounded-lg p-4 text-xs overflow-auto">
           {JSON.stringify(data, null, 2)}
         </pre>
       </section>

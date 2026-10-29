@@ -55,6 +55,15 @@ function Sidebar({
 }) {
   const { collapsed, mobileOpen, setMobileOpen } = useSidebar();
 
+  React.useEffect(() => {
+    if (!mobileOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMobileOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [mobileOpen, setMobileOpen]);
+
   return (
     <>
       <div
@@ -65,10 +74,12 @@ function Sidebar({
         onClick={() => setMobileOpen(false)}
       />
       <aside
+        aria-label="Main navigation"
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex h-screen w-72 flex-col border-r border-border bg-[#131210] transition-transform duration-300 md:translate-x-0",
+          "fixed inset-y-0 left-0 z-40 flex h-screen w-72 flex-col border-r border-border bg-[#131210] transition-[transform,visibility] duration-300 md:visible md:translate-x-0",
           collapsed ? "md:w-20" : "md:w-72",
-          mobileOpen ? "translate-x-0" : "-translate-x-full",
+          // Off-canvas on mobile must also leave the tab order, not just slide away.
+          mobileOpen ? "visible translate-x-0" : "invisible -translate-x-full",
           className
         )}
       >

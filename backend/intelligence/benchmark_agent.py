@@ -1,9 +1,10 @@
-"""Benchmark Agent - Dynamic industry benchmark fetching.
+"""Benchmark Agent - live cost-per-function lookup with cited fallback.
 
-Fetches current industry benchmarks from multiple sources:
-- CISQ cost of poor quality data (scraped from secondary sources that publish the figure)
-- SonarQube project benchmarks
-- Language-specific debt metrics
+Pages that quote a per-function remediation cost are fetched in parallel
+under a hard time box. A figure is accepted only if a dollar amount is
+immediately tied to "per function" / "per function point" in one sentence and
+falls in a sane range; otherwise the cited table value is used. Successes are
+cached 24h, failures 1h.
 """
 
 import logging
@@ -12,245 +13,184 @@ from datetime import datetime
 from typing import Any
 
 import httpx
-from bs4 import BeautifulSoup
 
-from core.cache_manager import get_cache
+from data.reference_tables import (
+    BENCHMARK_TABLE,
+    COST_PER_FUNCTION_USD,
+    REFERENCE_TABLES_VERSION,
+    cached_call,
+    run_parallel,
+)
 
 logger = logging.getLogger(__name__)
 
-CISQ_FALLBACK = 433.0
+CISQ_FALLBACK = COST_PER_FUNCTION_USD
 CISQ_YEAR = 2022
 
-# Secondary sources that cite the CISQ per-function cost in plain HTML.
-# Ordered by reliability; first successful scrape wins.
+BENCHMARK_TIME_BOX_SECONDS = 8.0
+REQUEST_TIMEOUT_SECONDS = 4.0
+
+# Accepted range for a per-function(-point) dollar figure.
+MIN_COST_PER_FUNCTION = 50.0
+MAX_COST_PER_FUNCTION = 5_000.0
+
+# Secondary sources that may quote the per-function cost. Tried in parallel;
+# the first URL (in this order) with a strict match wins.
 _CISQ_SCRAPE_URLS = [
     "https://www.it-cisq.org/",
     "https://www.castsoftware.com/glossary/cost-of-poor-quality-software",
     "https://linearb.io/blog/technical-debt-cost",
-    "https://www.perforce.com/blog/pdx/cost-of-software-defects",
 ]
 
-# Pattern: dollar amount followed by "per function" within ~60 chars
+# Strict: "$<amount> per function [point]" (or "/function") with the amount
+# directly adjacent to the unit.
 _PER_FUNCTION_RE = re.compile(
-    r"\$\s*([\d,]+(?:\.\d+)?)\s*(?:per\s+function|/\s*function)",
+    r"\$\s*([\d,]+(?:\.\d+)?)\s*(?:per|/|each)\s*function(?:\s+point)?\b",
     re.IGNORECASE,
 )
-# Broader fallback: any dollar amount 50–50,000 within text that mentions "function"
-_DOLLAR_RE = re.compile(r"\$([\d,]+(?:\.\d+)?)")
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+def parse_per_function_cost(text: str) -> tuple[float, str] | None:
+    """Strictly extract a per-function dollar cost from page text.
+
+    Returns (value, sentence) for the first in-range match whose dollar
+    amount is directly tied to "per function"/"per function point"; else None.
+    """
+    for sentence in _SENTENCE_SPLIT_RE.split(text):
+        for m in _PER_FUNCTION_RE.finditer(sentence):
+            value = float(m.group(1).replace(",", ""))
+            if MIN_COST_PER_FUNCTION <= value <= MAX_COST_PER_FUNCTION:
+                return value, sentence.strip()[:300]
+    return None
 
 
 class BenchmarkAgent:
-    """Fetches current industry benchmarks dynamically."""
+    """Fetches industry benchmarks live, with cited table fallbacks."""
 
-    def __init__(self) -> None:
-        self._cache = get_cache()
-        self._search_count = 0
-        self._max_searches = 10
+    def _scrape_url(self, url: str) -> dict[str, Any] | None:
+        """Fetch one page and strictly parse a per-function cost."""
+        from bs4 import BeautifulSoup
+
+        resp = httpx.get(
+            url,
+            timeout=REQUEST_TIMEOUT_SECONDS,
+            follow_redirects=True,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        if resp.status_code != 200:
+            return None
+        text = BeautifulSoup(resp.text, "lxml").get_text(" ", strip=True)
+        parsed = parse_per_function_cost(text)
+        if not parsed:
+            return None
+        value, snippet = parsed
+        return {
+            "cost_per_function_usd": value,
+            "source": f"Scraped from {url}",
+            "citation": f'{url}: "{snippet}"',
+            "year": datetime.now().year,
+            "url": url,
+            "live": True,
+            "fetched_at": datetime.now().isoformat(),
+        }
 
     def _scrape_cisq_from_secondary_sources(self) -> dict[str, Any] | None:
-        """Try curated secondary sources for the CISQ per-function cost figure."""
+        """Scrape all candidate pages in parallel under the time box."""
+        results = run_parallel(
+            {u: (lambda u=u: self._scrape_url(u)) for u in _CISQ_SCRAPE_URLS},
+            BENCHMARK_TIME_BOX_SECONDS,
+        )
         for url in _CISQ_SCRAPE_URLS:
-            try:
-                resp = httpx.get(
-                    url,
-                    timeout=4,
-                    follow_redirects=True,
-                    headers={"User-Agent": "Mozilla/5.0"},
-                )
-                if resp.status_code != 200:
-                    continue
-
-                text = BeautifulSoup(resp.text, "lxml").get_text(" ", strip=True)
-
-                # Best match: explicit "per function" dollar amount
-                m = _PER_FUNCTION_RE.search(text)
-                if m:
-                    value = float(m.group(1).replace(",", ""))
-                    if 50 <= value <= 50000:
-                        logger.info("CISQ per-function figure %.0f found at %s", value, url)
-                        return {
-                            "cost_per_function_usd": value,
-                            "source": f"CISQ via {url}",
-                            "year": datetime.now().year,
-                            "url": url,
-                            "live": True,
-                            "fetched_at": datetime.now().isoformat(),
-                        }
-
-                # Fallback: any dollar amount in range if "function" mentioned on page
-                if "function" in text.lower():
-                    for raw in _DOLLAR_RE.findall(text):
-                        value = float(raw.replace(",", ""))
-                        if 50 <= value <= 50000:
-                            logger.info(
-                                "CISQ-adjacent figure $%.0f found at %s", value, url
-                            )
-                            return {
-                                "cost_per_function_usd": value,
-                                "source": f"CISQ-adjacent via {url}",
-                                "year": datetime.now().year,
-                                "url": url,
-                                "live": True,
-                                "fetched_at": datetime.now().isoformat(),
-                            }
-
-            except Exception as exc:
-                logger.debug("CISQ scrape failed for %s: %s", url, exc, exc_info=True)
-
+            if results.get(url):
+                logger.info("Per-function cost found at %s", url)
+                return results[url]
         return None
 
     def get_cisq_benchmark(self) -> dict[str, Any]:
-        """Fetch the latest CISQ cost-per-function figure.
-
-        Strategy: scrape curated secondary sources that publish this figure in
-        plain HTML. Only cache successful live results so the next analysis
-        always retries on failure.
-        """
-        cache_key = self._cache.make_key("cisq_benchmark")
-
-        # Only serve cache for successful live results — never cache fallback
-        if self._cache.is_fresh(cache_key, "cisq_benchmarks"):
-            cached = self._cache.get(cache_key, "cisq_benchmarks")
-            if cached and cached.get("live"):
-                return cached
-
-        result = self._scrape_cisq_from_secondary_sources()
+        """Return the cost-per-function figure: live scrape, else the table."""
+        result = cached_call("cost_per_function", self._scrape_cisq_from_secondary_sources)
         if result:
-            self._cache.set(cache_key, "cisq_benchmarks", result)
             return result
-
-        logger.warning("All CISQ sources unavailable — using hardcoded fallback")
-        return self._cisq_fallback()
-
-    def _cisq_fallback(self) -> dict[str, Any]:
-        """Return CISQ fallback benchmark."""
+        logger.warning("No live cost-per-function figure; using reference table")
+        entry = BENCHMARK_TABLE["cost_per_function_usd"]
         return {
-            "cost_per_function_usd": CISQ_FALLBACK,
-            "source": "CISQ 2022 (fallback)",
+            "cost_per_function_usd": entry["value"],
+            "source": entry["source"],
+            "citation": entry["citation"],
             "year": CISQ_YEAR,
-            "url": "https://www.it-cisq.org/measure-of-risk/",
+            "url": "https://www.it-cisq.org/",
             "live": False,
+            "fetched_at": datetime.now().isoformat(),
         }
 
     def get_sonarqube_language_benchmark(self, language: str) -> dict[str, Any]:
-        """Search for SonarQube benchmarks for a language.
-        
-        Args:
-            language: Programming language
-            
-        Returns:
-            Dict with SonarQube benchmark data
+        """Return SonarQube-style debt benchmarks (cited table; not scraped).
+
+        No reliable machine-readable public source exists, so these stay
+        table values with live=False.
         """
-        cache_key = self._cache.make_key("sonar_benchmark", language)
-
-        if self._cache.is_fresh(cache_key, "cisq_benchmarks"):
-            cached = self._cache.get(cache_key, "cisq_benchmarks")
-            if cached:
-                return cached
-
-        if self._search_count < self._max_searches:
-            try:
-                from ddgs import DDGS
-
-                query = f"SonarQube average technical debt {language} projects days benchmark"
-
-                with DDGS() as ddgs:
-                    results = list(ddgs.text(query, max_results=5))
-
-                self._search_count += 1
-
-                days_figures = []
-                pct_figures = []
-                sources = []
-
-                for r in results:
-                    snippet = r.get("body", "")
-                    sources.append(r.get("href", ""))
-
-                    days_matches = re.findall(r"(\d+(?:\.\d+)?)\s*(?:days|debt days)", snippet)
-                    for match in days_matches:
-                        try:
-                            days_figures.append(float(match))
-                        except ValueError:
-                            continue
-
-                    pct_matches = re.findall(r"(\d+(?:\.\d+)?)\s*%", snippet)
-                    for match in pct_matches:
-                        try:
-                            val = float(match)
-                            if 1 <= val <= 50:
-                                pct_figures.append(val)
-                        except ValueError:
-                            continue
-
-                avg_days = sum(days_figures) / len(days_figures) if days_figures else 15.0
-                avg_pct = sum(pct_figures) / len(pct_figures) if pct_figures else 10.0
-
-                result = {
-                    "language": language,
-                    "avg_debt_days": round(avg_days, 1),
-                    "avg_debt_ratio_pct": round(avg_pct, 1),
-                    "source": "SonarQube via web search",
-                    "url": sources[0] if sources else None,
-                    "live": True,
-                    "fetched_at": datetime.now().isoformat(),
-                }
-
-                self._cache.set(cache_key, "cisq_benchmarks", result)
-                return result
-
-            except Exception as e:
-                logger.warning(f"SonarQube search failed: {e}", exc_info=True)
-
-        return self._sonar_fallback(language)
-
-    def _sonar_fallback(self, language: str) -> dict[str, Any]:
-        """Return SonarQube fallback benchmark."""
+        days = BENCHMARK_TABLE["avg_debt_days"]
+        pct = BENCHMARK_TABLE["avg_debt_ratio_pct"]
         return {
             "language": language,
-            "avg_debt_days": 15.0,
-            "avg_debt_ratio_pct": 10.0,
-            "source": "SonarQube average (fallback)",
+            "avg_debt_days": days["value"],
+            "avg_debt_ratio_pct": pct["value"],
+            "source": days["source"],
+            "citation": days["citation"],
             "live": False,
+            "fetched_at": datetime.now().isoformat(),
         }
 
     def get_current_benchmarks(self, language: str = "python") -> dict[str, Any]:
-        """Get all current benchmarks for a language.
-        
+        """Get benchmarks for a language (live cost/function, table otherwise).
+
         Args:
             language: Programming language
-            
+
         Returns:
-            Complete benchmark data
+            Benchmark data with per-source details and live flags
         """
         cisq = self.get_cisq_benchmark()
         sonar = self.get_sonarqube_language_benchmark(language)
-
-        confidence = "high" if cisq.get("live") else "low"
+        live_sources = int(bool(cisq["live"])) + int(bool(sonar["live"]))
 
         return {
-            "cost_per_function_usd": cisq.get("cost_per_function_usd", CISQ_FALLBACK),
-            "cost_per_function_source": cisq.get("source", "CISQ 2022"),
-            "cost_per_function_year": cisq.get("year", CISQ_YEAR),
-            "avg_debt_days": sonar.get("avg_debt_days", 15.0),
-            "avg_debt_ratio_pct": sonar.get("avg_debt_ratio_pct", 10.0),
+            "cost_per_function_usd": cisq["cost_per_function_usd"],
+            "cost_per_function_source": cisq["source"],
+            "cost_per_function_year": cisq["year"],
+            "avg_debt_days": sonar["avg_debt_days"],
+            "avg_debt_ratio_pct": sonar["avg_debt_ratio_pct"],
             "language": language,
-            "confidence": confidence,
-            "last_updated": cisq.get("fetched_at", datetime.now().isoformat()),
+            "confidence": "high" if cisq["live"] else "low",
+            "last_updated": cisq["fetched_at"],
             "sources": {
-                "cisq": cisq.get("source"),
-                "sonar": sonar.get("source"),
+                "cisq": cisq["source"],
+                "sonar": sonar["source"],
             },
+            "source_details": {
+                "cost_per_function": {
+                    "value": cisq["cost_per_function_usd"],
+                    "live": cisq["live"],
+                    "source": cisq["source"],
+                    "citation": cisq["citation"],
+                    "fetched_at": cisq["fetched_at"],
+                },
+                "avg_debt_days": {
+                    "value": sonar["avg_debt_days"],
+                    "live": sonar["live"],
+                    "source": sonar["source"],
+                    "citation": sonar["citation"],
+                    "fetched_at": sonar["fetched_at"],
+                },
+            },
+            "citation": cisq["citation"],
+            "live": bool(cisq["live"]),
+            "live_sources": live_sources,
+            "sources_used": live_sources,
+            "reference_version": REFERENCE_TABLES_VERSION,
         }
 
     def get_cost_per_function(self, language: str = "python") -> float:
-        """Convenience method to get just the cost per function.
-        
-        Args:
-            language: Programming language
-            
-        Returns:
-            Cost per function in USD
-        """
-        benchmark = self.get_current_benchmarks(language)
-        return benchmark["cost_per_function_usd"]
+        """Convenience method to get just the cost per function."""
+        return self.get_current_benchmarks(language)["cost_per_function_usd"]

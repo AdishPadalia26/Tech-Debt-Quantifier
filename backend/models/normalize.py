@@ -42,6 +42,10 @@ def normalize_analysis_result(raw: dict[str, Any] | None) -> dict[str, Any]:
                 "adjusted_minutes": _safe_float(item.get("adjusted_minutes")),
                 "hourly_rate": _safe_float(item.get("hourly_rate"), 85.0),
                 "combined_multiplier": _safe_float(item.get("combined_multiplier"), 1.0),
+                "principal": item.get("principal") is not False,
+                "non_principal_kind": item.get("non_principal_kind"),
+                "cost_range": item.get("cost_range"),
+                "estimation_source": item.get("estimation_source"),
                 "complexity": item.get("complexity"),
                 "function": item.get("function"),
                 "cost_factors": item.get("cost_factors") or [],
@@ -83,11 +87,15 @@ def normalize_analysis_result(raw: dict[str, Any] | None) -> dict[str, Any]:
 
     total_cost = _safe_float(payload.get("total_cost_usd"))
     if total_cost == 0 and normalized_items:
-        total_cost = sum(item["cost_usd"] for item in normalized_items)
+        total_cost = sum(
+            item["cost_usd"] for item in normalized_items if item["principal"]
+        )
 
     total_hours = _safe_float(payload.get("total_remediation_hours"))
     if total_hours == 0 and normalized_items:
-        total_hours = sum(item["adjusted_minutes"] for item in normalized_items) / 60
+        total_hours = sum(
+            item["adjusted_minutes"] for item in normalized_items if item["principal"]
+        ) / 60
 
     return {
         **payload,

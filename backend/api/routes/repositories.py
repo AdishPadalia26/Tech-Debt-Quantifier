@@ -19,8 +19,28 @@ from database.crud import (
 router = APIRouter(tags=["repositories"])
 
 
+# Registered before the plain history route: the `:path` converter would
+# otherwise swallow the `/rich` suffix and serve the wrong payload.
+@router.get("/history/{repo_url:path}/rich")
+def get_repo_history_rich(repo_url: str, user: User | None = Depends(get_current_user_optional)):
+    """Get richer trend data for a repository, including findings and roadmap counts."""
+    if not repo_url.startswith("http"):
+        repo_url = f"https://{repo_url}"
+
+    if not DB_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available.")
+
+    user_id = user.id if user else None
+    db = SessionLocal()
+    try:
+        trend = get_rich_repo_trend(db, repo_url, user_id=user_id)
+        return {"github_url": repo_url, **trend}
+    finally:
+        db.close()
+
+
 @router.get("/history/{repo_url:path}")
-async def get_repo_history(repo_url: str, user: User | None = Depends(get_current_user_optional)):
+def get_repo_history(repo_url: str, user: User | None = Depends(get_current_user_optional)):
     """Get scan history and trend for a repo."""
     if not repo_url.startswith("http"):
         repo_url = f"https://{repo_url}"
@@ -58,26 +78,8 @@ async def get_repo_history(repo_url: str, user: User | None = Depends(get_curren
         db.close()
 
 
-@router.get("/history/{repo_url:path}/rich")
-async def get_repo_history_rich(repo_url: str, user: User | None = Depends(get_current_user_optional)):
-    """Get richer trend data for a repository, including findings and roadmap counts."""
-    if not repo_url.startswith("http"):
-        repo_url = f"https://{repo_url}"
-
-    if not DB_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Database not available.")
-
-    user_id = user.id if user else None
-    db = SessionLocal()
-    try:
-        trend = get_rich_repo_trend(db, repo_url, user_id=user_id)
-        return {"github_url": repo_url, **trend}
-    finally:
-        db.close()
-
-
 @router.get("/repositories")
-async def list_repositories(user: User | None = Depends(get_current_user_optional)):
+def list_repositories(user: User | None = Depends(get_current_user_optional)):
     """List all tracked repositories with latest metrics."""
     if not DB_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available.")
@@ -92,7 +94,7 @@ async def list_repositories(user: User | None = Depends(get_current_user_optiona
 
 
 @router.get("/repositories/{repo_url:path}/summary")
-async def get_repository_summary(
+def get_repository_summary(
     repo_url: str, user: User | None = Depends(get_current_user_optional)
 ):
     """Get a high-level rollup for the latest completed repository scan."""
@@ -111,7 +113,7 @@ async def get_repository_summary(
 
 
 @router.get("/repositories/{repo_url:path}/triage")
-async def get_repository_triage(
+def get_repository_triage(
     repo_url: str, user: User | None = Depends(get_current_user_optional)
 ):
     """Get triage metrics for the latest completed repository scan."""
@@ -130,7 +132,7 @@ async def get_repository_triage(
 
 
 @router.get("/repositories/{repo_url:path}/unresolved")
-async def get_repository_unresolved(
+def get_repository_unresolved(
     repo_url: str,
     limit: int = 20,
     user: User | None = Depends(get_current_user_optional),
@@ -161,7 +163,7 @@ async def get_repository_unresolved(
 
 
 @router.get("/repositories/{repo_url:path}/changes")
-async def get_repository_changes(
+def get_repository_changes(
     repo_url: str, user: User | None = Depends(get_current_user_optional)
 ):
     """Get latest-vs-previous debt deltas for a repository."""
@@ -183,7 +185,7 @@ async def get_repository_changes(
 
 
 @router.get("/repositories/{repo_url:path}/active-trend")
-async def get_repository_active_trend(
+def get_repository_active_trend(
     repo_url: str, user: User | None = Depends(get_current_user_optional)
 ):
     """Get unresolved active debt trend data for a repository."""

@@ -43,6 +43,25 @@ def _repo_storage_root() -> Path:
 
 
 REPOS_DIR = _repo_storage_root()
+
+
+def _trust_repo_cache(root: Path) -> None:
+    """Let git read clones under ``root`` even if another Windows account owns them.
+
+    Scoped to the clone cache only (``safe.directory=<root>/*``) and set for this
+    process via GIT_CONFIG_* env vars; the user's global git config is untouched.
+    """
+    pattern = f"{root.resolve().as_posix()}/*"
+    count = int(os.environ.get("GIT_CONFIG_COUNT", "0") or 0)
+    for i in range(count):
+        if os.environ.get(f"GIT_CONFIG_VALUE_{i}") == pattern:
+            return
+    os.environ[f"GIT_CONFIG_KEY_{count}"] = "safe.directory"
+    os.environ[f"GIT_CONFIG_VALUE_{count}"] = pattern
+    os.environ["GIT_CONFIG_COUNT"] = str(count + 1)
+
+
+_trust_repo_cache(REPOS_DIR)
 DEFAULT_CLONE_TIMEOUT_SECONDS = int(os.getenv("GIT_CLONE_TIMEOUT_SECONDS", "120"))
 
 

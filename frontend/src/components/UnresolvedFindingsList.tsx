@@ -1,5 +1,6 @@
 'use client';
 
+import { formatHours, formatUsd, humanize, severityChip } from '@/lib/format';
 import { StructuredFinding } from '@/types';
 
 interface Props {
@@ -7,81 +8,70 @@ interface Props {
   title?: string;
 }
 
-function severityStyle(severity: string) {
-  switch (severity) {
-    case 'critical':
-      return 'text-red-400 bg-red-950/40 border-red-800';
-    case 'high':
-      return 'text-orange-400 bg-orange-950/40 border-orange-800';
-    case 'medium':
-      return 'text-yellow-400 bg-yellow-950/40 border-yellow-800';
-    default:
-      return 'text-green-400 bg-green-950/40 border-green-800';
-  }
-}
-
 export default function UnresolvedFindingsList({
   findings,
-  title = 'Top Unresolved Findings',
+  title = 'Top unresolved findings',
 }: Props) {
   return (
-    <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
-      <div className="flex items-center justify-between mb-4">
+    <section className="min-w-0 rounded-xl border border-border bg-card p-6">
+      <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
         <div>
-          <h3 className="text-lg font-semibold text-white">{title}</h3>
-          <p className="text-gray-400 text-sm">
-            Highest-priority unresolved work from the latest scan
+          <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+          <p className="text-sm text-muted-foreground">
+            Highest-priority unresolved work, ranked by cost and severity
           </p>
         </div>
-        <p className="text-gray-500 text-sm">{findings.length} shown</p>
+        <p className="tabular text-sm text-muted-foreground">{findings.length} shown</p>
       </div>
 
       {findings.length === 0 ? (
-        <p className="text-gray-400 text-sm">
-          No unresolved findings available yet.
-        </p>
+        <p className="text-sm text-muted-foreground">No unresolved findings. Nice.</p>
       ) : (
-        <div className="space-y-3">
+        <ul className="divide-y divide-border">
           {findings.map((finding) => (
-            <div
-              key={finding.id}
-              className="bg-gray-900/60 rounded-lg p-4 border border-gray-700"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3 mb-2">
-                <div>
-                  <p className="text-white font-medium">
-                    {finding.module || 'root'} · {finding.subcategory || finding.category}
+            <li key={finding.id} className="py-3 first:pt-0 last:pb-0">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-medium text-foreground">
+                    {humanize(finding.subcategory || finding.category)}
+                    <span className="font-normal text-muted-foreground">
+                      {' '}in {finding.module || 'root'}
+                    </span>
                   </p>
-                  <p className="text-gray-400 text-sm break-all">
+                  <p className="mt-0.5 break-all font-mono text-xs text-muted-foreground">
                     {finding.file_path}
                   </p>
                 </div>
                 <span
-                  className={`px-2 py-1 rounded-full border text-xs font-medium ${severityStyle(
+                  className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium capitalize ${severityChip(
                     finding.severity
                   )}`}
                 >
                   {finding.severity}
                 </span>
               </div>
-              <div className="flex flex-wrap gap-4 text-sm">
-                <span className="text-purple-400">
-                  ${Math.round(finding.cost_usd).toLocaleString()}
-                </span>
-                <span className="text-gray-400">
-                  {finding.effort_hours?.toFixed(1) || '0.0'}h
-                </span>
-                <span className="text-gray-500">
-                  impact: {finding.business_impact || 'n/a'}
-                </span>
-                <span className="text-gray-500">
-                  confidence: {Math.round((finding.confidence || 0) * 100)}%
-                </span>
-              </div>
-            </div>
+              <dl className="tabular mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                <div className="flex gap-1">
+                  <dt className="sr-only">Cost</dt>
+                  <dd className="font-medium text-foreground">{formatUsd(finding.cost_usd)}</dd>
+                </div>
+                <div className="flex gap-1">
+                  <dt className="sr-only">Effort</dt>
+                  <dd className="text-muted-foreground">{formatHours(finding.effort_hours)}</dd>
+                </div>
+                <div className="flex gap-1 text-muted-foreground">
+                  <dt>Impact</dt>
+                  <dd className="capitalize">{finding.business_impact || 'n/a'}</dd>
+                </div>
+                <div className="flex gap-1 text-muted-foreground">
+                  <dt>Confidence</dt>
+                  <dd>{Math.round((finding.confidence || 0) * 100)}%</dd>
+                </div>
+              </dl>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
-    </div>
+    </section>
   );
 }

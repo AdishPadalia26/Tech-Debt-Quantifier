@@ -1,19 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
 import { usePathname } from "next/navigation";
-import {
-  BarChart3,
-  FolderGit2,
-  Home,
-  Settings,
-  ShieldCheck,
-} from "lucide-react";
+import { BarChart3, FolderGit2, Home, ShieldCheck } from "lucide-react";
 
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupLabel,
   SidebarHeader,
@@ -27,12 +21,20 @@ const navItems = [
   { title: "Analyzer", url: "/", icon: Home },
   { title: "Portfolio", url: "/portfolio", icon: BarChart3 },
   { title: "Import", url: "/import", icon: FolderGit2 },
-  { title: "Debug", url: "/debug", icon: ShieldCheck },
+  // Internal tooling — not part of the product surface.
+  ...(process.env.NODE_ENV === "development"
+    ? [{ title: "Debug", url: "/debug", icon: ShieldCheck }]
+    : []),
 ];
 
 export function AppSidebar() {
   const pathname = usePathname();
-  const { collapsed } = useSidebar();
+  const { collapsed, setMobileOpen } = useSidebar();
+
+  // Close the mobile drawer after navigating.
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname, setMobileOpen]);
 
   return (
     <Sidebar variant="inset" collapsible="icon">
@@ -105,18 +107,6 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild isActive={pathname === "/import"}>
-              <Link href="/import">
-                <Settings className="size-4 shrink-0" />
-                {!collapsed && <span>Settings</span>}
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarFooter>
     </Sidebar>
   );
 }

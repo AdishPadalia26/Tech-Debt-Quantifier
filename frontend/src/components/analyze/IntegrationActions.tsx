@@ -182,7 +182,7 @@ export function IntegrationActions({
                   size="sm"
                   onClick={() => { void handleSendSlack().catch(console.error); }}
                   disabled={slackSending || slackSent}
-                  className={slackSent ? 'border-emerald-500/30 text-emerald-400' : ''}
+                  className={slackSent ? 'border-success/30 text-success' : ''}
                 >
                   {slackSent ? (
                     <>
@@ -217,7 +217,7 @@ export function IntegrationActions({
                     disabled={jiraCreating || !!jiraResult?.total_created}
                     className={
                       jiraResult?.total_created
-                        ? 'border-emerald-500/30 text-emerald-400'
+                        ? 'border-success/30 text-success'
                         : ''
                     }
                   >
@@ -248,7 +248,7 @@ export function IntegrationActions({
                 <p className="max-w-xs text-right text-xs text-destructive">{jiraError}</p>
               ) : null}
               {jiraResult?.total_failed && jiraResult.total_failed > 0 ? (
-                <p className="text-xs text-amber-400">
+                <p className="text-xs text-warning">
                   {jiraResult.total_failed} ticket
                   {jiraResult.total_failed === 1 ? '' : 's'} failed to create
                 </p>

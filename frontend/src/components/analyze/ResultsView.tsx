@@ -3,15 +3,6 @@
 import { useEffect, useState } from 'react';
 import { Card as TremorCard } from '@tremor/react';
 import { motion } from 'motion/react';
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
-import {
-  Area,
-  AreaChart as RechartsAreaChart,
-  CartesianGrid,
-  Legend as RechartsLegend,
-  XAxis,
-  YAxis,
-} from 'recharts';
 import {
   ChevronDown,
   Clock,
@@ -57,6 +48,11 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { CostCategoryDonut } from '@/components/charts/CostCategoryDonut';
+import { ParetoChart, paretoStats } from '@/components/charts/ParetoChart';
+import { RoiBreakEvenChart } from '@/components/charts/RoiBreakEvenChart';
+import { categoryLabel } from '@/lib/categories';
+import { humanize } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import {
   DebtReport,
@@ -69,33 +65,25 @@ import {
   StructuredFinding,
   UnresolvedFindingsResponse,
 } from '@/types';
+import { EstimateQuality } from './EstimateQuality';
+import { HeadlineHero } from './HeadlineHero';
 import { IntegrationActions } from './IntegrationActions';
+import { ViewModeToggle, useViewMode } from './ViewModeToggle';
 
 // ─── Constants ────────────────────────────────────────────────
 
-const CATEGORY_CHART_COLORS = [
-  '#4f98a3',
-  '#f59e0b',
-  '#10b981',
-  '#f97316',
-  '#60a5fa',
-  '#f43f5e',
-  '#a78bfa',
-  '#22c55e',
-];
-
 const SEVERITY_BADGE: Record<string, string> = {
-  critical: 'bg-red-500/15 text-red-400 border-red-500/20',
-  high: 'bg-orange-500/15 text-orange-400 border-orange-500/20',
-  medium: 'bg-amber-500/15 text-amber-400 border-amber-500/20',
-  low: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20',
+  critical: 'bg-danger/15 text-danger border-danger/20',
+  high: 'bg-severity-high/15 text-severity-high border-severity-high/20',
+  medium: 'bg-warning/15 text-warning border-warning/20',
+  low: 'bg-success/15 text-success border-success/20',
 };
 
 const SEV_COLOR: Record<string, string> = {
-  critical: 'text-red-400',
-  high: 'text-orange-400',
-  medium: 'text-amber-400',
-  low: 'text-emerald-400',
+  critical: 'text-danger',
+  high: 'text-severity-high',
+  medium: 'text-warning',
+  low: 'text-success',
 };
 
 // ─── Local types ──────────────────────────────────────────────
@@ -122,6 +110,8 @@ type ActionItem = {
 type DebtItemRecord = {
   severity?: string;
   file?: string;
+  function?: string;
+  principal?: boolean;
   category?: string;
   cost_usd?: number;
   adjusted_minutes?: number;
@@ -159,10 +149,6 @@ function useCountUp(target: number, duration = 1200) {
     return () => cancelAnimationFrame(frame);
   }, [target, duration]);
   return value;
-}
-
-function formatCategoryName(value?: string | null) {
-  return (value || 'unknown').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function formatFilePath(value?: string | null) {
@@ -268,9 +254,9 @@ function ActionCard({ action, index }: { action: ActionItem; index: number }) {
                   className={cn(
                     'text-xs px-2 py-0.5 rounded-full font-medium',
                     action.estimation_confidence === 'high'
-                      ? 'bg-emerald-500/15 text-emerald-400'
+                      ? 'bg-success/15 text-success'
                       : action.estimation_confidence === 'medium'
-                        ? 'bg-amber-500/15 text-amber-400'
+                        ? 'bg-warning/15 text-warning'
                         : 'bg-muted text-muted-foreground'
                   )}
                 >
@@ -330,7 +316,7 @@ function ActionCard({ action, index }: { action: ActionItem; index: number }) {
               <p
                 className={cn(
                   'font-mono font-semibold tabular-nums',
-                  monthlySavings > 0 ? 'text-emerald-400' : 'text-muted-foreground'
+                  monthlySavings > 0 ? 'text-success' : 'text-muted-foreground'
                 )}
               >
                 {monthlySavings > 0 ? `$${monthlySavings.toLocaleString()}/mo` : 'N/A'}
@@ -400,7 +386,7 @@ function DebtItemsTable({ items }: { items: DebtItemRecord[] }) {
                   <TableCell className="max-w-xs truncate font-mono text-xs text-muted-foreground">
                     {formatFilePath(item.file)}
                   </TableCell>
-                  <TableCell className="text-xs">{formatCategoryName(item.category)}</TableCell>
+                  <TableCell className="text-xs">{categoryLabel(item.category)}</TableCell>
                   <TableCell>
                     <span className={cn('text-xs font-medium', SEV_COLOR[sev] ?? '')}>
                       {sev}
@@ -437,7 +423,7 @@ function DebtItemsTable({ items }: { items: DebtItemRecord[] }) {
               <div className="grid grid-cols-2 gap-3">
                 {(
                   [
-                    ['Category', formatCategoryName(selected.category)],
+                    ['Category', categoryLabel(selected.category)],
                     ['Severity', selected.severity || '-'],
                     ['Base effort', `${selected.base_minutes ?? '-'} min`],
                     ['Adjusted effort', `${selected.adjusted_minutes ?? '-'} min`],
@@ -519,10 +505,10 @@ function FindingsCard({
                         className={cn(
                           'ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium',
                           finding.ownership_risk === 'critical'
-                            ? 'bg-red-500/15 text-red-400'
+                            ? 'bg-danger/15 text-danger'
                             : finding.ownership_risk === 'high'
-                              ? 'bg-orange-500/15 text-orange-400'
-                              : 'bg-amber-500/15 text-amber-400'
+                              ? 'bg-severity-high/15 text-severity-high'
+                              : 'bg-warning/15 text-warning'
                         )}
                       >
                         {finding.ownership_risk} risk
@@ -561,10 +547,10 @@ const SENIORITY_LABEL: Record<SeniorityLevel, string> = {
 // ─── Contributor Insights ─────────────────────────────────────
 
 const RISK_COLOR: Record<string, string> = {
-  critical: 'text-red-400',
-  high: 'text-orange-400',
-  medium: 'text-amber-400',
-  low: 'text-emerald-400',
+  critical: 'text-danger',
+  high: 'text-severity-high',
+  medium: 'text-warning',
+  low: 'text-success',
 };
 
 interface ContributorRow {
@@ -708,7 +694,7 @@ function ContributorInsights({
                     {f.owner_count !== null && (
                       <span className="text-muted-foreground">{f.owner_count} contributor{(f.owner_count ?? 0) !== 1 ? 's' : ''}</span>
                     )}
-                    <span className="text-red-400 font-medium">critical risk</span>
+                    <span className="text-danger font-medium">critical risk</span>
                   </div>
                 </div>
               ))}
@@ -755,6 +741,13 @@ export function ResultsView({
   onReset,
 }: ResultsViewProps) {
   const [seniorityLevel, setSeniorityLevel] = useState<SeniorityLevel>('mid');
+  const [viewMode, setViewMode] = useViewMode();
+  const [activeTab, setActiveTab] = useState('actions');
+  const isEngineer = viewMode === 'engineer';
+  const tab =
+    !isEngineer && (activeTab === 'files' || activeTab === 'contributors')
+      ? 'actions'
+      : activeTab;
 
   const analysis = (result?.raw_analysis ?? result) as DebtReport | null;
 
@@ -779,26 +772,13 @@ export function ResultsView({
   const animatedHours = useCountUp(Math.round(totalHours));
 
   const scoreColor =
-    debtScore <= 3 ? 'text-emerald-400' : debtScore <= 6 ? 'text-amber-400' : 'text-red-400';
+    debtScore <= 3 ? 'text-success' : debtScore <= 6 ? 'text-warning' : 'text-danger';
   const scoreSubtext =
     debtScore <= 3
       ? 'Low - healthy codebase'
       : debtScore <= 6
         ? 'Moderate - needs attention'
         : 'High - act now';
-
-  const categoryData = Object.entries(analysis?.cost_by_category ?? {})
-    .filter(([, value]) => typeof value === 'object' && (value?.cost_usd ?? 0) > 0)
-    .map(([key, value]) => ({
-      name: formatCategoryName(key),
-      value: Math.round(value.cost_usd),
-      color:
-        CATEGORY_CHART_COLORS[
-          Object.keys(analysis?.cost_by_category ?? {}).indexOf(key) %
-            CATEGORY_CHART_COLORS.length
-        ],
-    }))
-    .sort((a, b) => b.value - a.value);
 
   const nestedPriorityActions = Array.isArray(analysis?.priority_actions)
     ? (analysis?.priority_actions as ActionItem[])
@@ -824,14 +804,23 @@ export function ResultsView({
       : null;
   const roi = nestedRoi ?? result?.roi_analysis ?? {};
 
-  const roiChartData = Array.from({ length: 12 }, (_, i) => ({
-    month: `Month ${i + 1}`,
-    'Cumulative Savings': Math.round(
-      (((roi as { annual_maintenance_savings?: number }).annual_maintenance_savings ?? 0) / 12) *
-        (i + 1)
-    ),
-    'Fix Cost': (roi as { total_fix_cost?: number }).total_fix_cost ?? 0,
-  }));
+  const roiValues = roi as {
+    total_fix_cost?: number;
+    annual_maintenance_savings?: number;
+    payback_months?: number;
+    '3_year_roi_pct'?: number;
+  };
+
+  const pareto = paretoStats(debtItems);
+  const topCount = Math.min(10, pareto.rows.length);
+  const topShare = pareto.shareOfTop(topCount);
+  const repoName =
+    currentGithubUrl
+      .replace(/\/+$/, '')
+      .replace(/\.git$/, '')
+      .split('/')
+      .pop() || null;
+  const totalCostRange = analysis?.total_cost_range ?? result?.total_cost_range;
 
   const roadmapSections = Object.entries(
     scanRoadmap?.roadmap ??
@@ -843,6 +832,38 @@ export function ResultsView({
 
   return (
     <section className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+        <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-medium text-muted-foreground">Estimate by seniority:</span>
+          <div className="flex overflow-hidden rounded-md border border-border">
+            {(['junior', 'mid', 'senior'] as SeniorityLevel[]).map((level) => (
+              <button
+                key={level}
+                onClick={() => setSeniorityLevel(level)}
+                className={cn(
+                  'border-r border-border px-3 py-1 text-xs font-medium transition-colors last:border-r-0',
+                  seniorityLevel === level
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-card text-muted-foreground hover:bg-muted',
+                )}
+              >
+                {SENIORITY_LABEL[level]}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <HeadlineHero
+        repoName={repoName}
+        totalCost={baseTotalCost}
+        range={totalCostRange}
+        hours={baseTotalHours}
+        topShare={topShare}
+        topCount={topCount}
+      />
+
       {analysis?.executive_summary ? (
         <Card className="border-border bg-card">
           <CardHeader className="pb-4">
@@ -868,25 +889,14 @@ export function ResultsView({
         onReset={onReset}
       />
 
-      <div className="flex items-center gap-3">
-        <span className="text-xs font-medium text-muted-foreground">Estimate by seniority:</span>
-        <div className="flex overflow-hidden rounded-md border border-border">
-          {(['junior', 'mid', 'senior'] as SeniorityLevel[]).map((level) => (
-            <button
-              key={level}
-              onClick={() => setSeniorityLevel(level)}
-              className={cn(
-                'border-r border-border px-3 py-1 text-xs font-medium transition-colors last:border-r-0',
-                seniorityLevel === level
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-card text-muted-foreground hover:bg-muted',
-              )}
-            >
-              {SENIORITY_LABEL[level]}
-            </button>
-          ))}
-        </div>
-      </div>
+      <EstimateQuality
+        estimation_stats={analysis?.estimation_stats ?? result?.estimation_stats}
+        warnings={analysis?.warnings ?? result?.warnings}
+        total_cost_range={analysis?.total_cost_range ?? result?.total_cost_range}
+        non_principal_cost={analysis?.non_principal_cost ?? result?.non_principal_cost}
+        hourly_rates={analysis?.hourly_rates ?? result?.hourly_rates}
+        model_version={analysis?.model_version ?? result?.model_version}
+      />
 
       <TooltipProvider>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -926,86 +936,34 @@ export function ResultsView({
         </div>
       </TooltipProvider>
 
-      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <Card className="border-border bg-card">
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card className="min-w-0 border-border bg-card">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Cost by Category</CardTitle>
           </CardHeader>
           <CardContent>
-            {categoryData.length === 0 ? (
-              <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
-                No category data available
-              </div>
-            ) : (
-              <div className="flex flex-col items-center gap-4">
-                <div className="h-56 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={categoryData}
-                        dataKey="value"
-                        nameKey="name"
-                        innerRadius={64}
-                        outerRadius={102}
-                        paddingAngle={3}
-                        stroke="rgba(15, 14, 13, 0.95)"
-                        strokeWidth={2}
-                      >
-                        {categoryData.map((entry) => (
-                          <Cell key={entry.name} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <text
-                        x="50%"
-                        y="47%"
-                        textAnchor="middle"
-                        className="fill-[#797876] text-[11px] uppercase tracking-[0.18em]"
-                      >
-                        Total
-                      </text>
-                      <text
-                        x="50%"
-                        y="56%"
-                        textAnchor="middle"
-                        className="fill-[#cdccca] font-mono text-[20px] font-semibold"
-                      >
-                        ${animatedCost.toLocaleString()}
-                      </text>
-                      <RechartsTooltip
-                        formatter={(value: unknown) => {
-                          const numericValue = Array.isArray(value)
-                            ? Number(value[0] ?? 0)
-                            : Number(value ?? 0);
-                          return [`$${numericValue.toLocaleString()}`, 'Cost'];
-                        }}
-                        contentStyle={{
-                          backgroundColor: '#1c1b19',
-                          border: '1px solid rgba(205, 204, 202, 0.12)',
-                          borderRadius: '10px',
-                          color: '#cdccca',
-                        }}
-                        itemStyle={{ color: '#cdccca' }}
-                        labelStyle={{ color: '#797876' }}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs">
-                  {categoryData.map((item) => (
-                    <div key={item.name} className="flex items-center gap-2 text-foreground">
-                      <span
-                        className="size-2.5 rounded-full"
-                        style={{ backgroundColor: item.color }}
-                      />
-                      <span>{item.name}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            <CostCategoryDonut
+              costByCategory={analysis?.cost_by_category ?? result?.cost_by_category}
+            />
           </CardContent>
         </Card>
 
+        <Card className="min-w-0 border-border bg-card">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Where the money is (80/20)</CardTitle>
+            <CardDescription>
+              A few items usually drive most of the cost. Fix those first.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ParetoChart items={debtItems} />
+          </CardContent>
+        </Card>
+      </div>
+
+      {isEngineer && (
+        <>
+          <div className="grid gap-4">
         <Card className="border-border bg-card">
           <CardHeader>
             <CardTitle>Repository Signals</CardTitle>
@@ -1079,7 +1037,7 @@ export function ResultsView({
             </div>
           </CardContent>
         </Card>
-      </div>
+          </div>
 
       <div className="flex items-center gap-2 rounded-md border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
         <span className="font-mono text-primary">f</span>
@@ -1090,16 +1048,20 @@ export function ResultsView({
           Not a line count - effort + risk estimate
         </span>
       </div>
+        </>
+      )}
 
-      <Tabs defaultValue="actions" className="mt-6">
-        <TabsList className="bg-muted">
+      <Tabs value={tab} onValueChange={setActiveTab} className="mt-6">
+        <TabsList className="h-auto flex-wrap bg-muted">
           <TabsTrigger value="actions">Priority Actions</TabsTrigger>
-          <TabsTrigger value="files">Debt Items</TabsTrigger>
+          {isEngineer && <TabsTrigger value="files">Debt Items</TabsTrigger>}
           <TabsTrigger value="roi">ROI Analysis</TabsTrigger>
-          <TabsTrigger value="contributors" className="flex items-center gap-1.5">
-            <Users className="size-3.5" />
-            Contributors
-          </TabsTrigger>
+          {isEngineer && (
+            <TabsTrigger value="contributors" className="flex items-center gap-1.5">
+              <Users className="size-3.5" />
+              Contributors
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="actions" className="space-y-3">
@@ -1121,9 +1083,11 @@ export function ResultsView({
           )}
         </TabsContent>
 
-        <TabsContent value="files">
-          <DebtItemsTable items={debtItems} />
-        </TabsContent>
+        {isEngineer && (
+          <TabsContent value="files">
+            <DebtItemsTable items={debtItems} />
+          </TabsContent>
+        )}
 
         <TabsContent value="roi" className="space-y-4">
           <div className="grid gap-3 md:grid-cols-3">
@@ -1137,7 +1101,7 @@ export function ResultsView({
             </Card>
             <Card className="border-border bg-card p-4">
               <p className="mb-1 text-xs text-muted-foreground">Annual Savings</p>
-              <p className="font-mono text-xl font-semibold tabular-nums text-emerald-400">
+              <p className="font-mono text-xl font-semibold tabular-nums text-success">
                 $
                 {(
                   (roi as { annual_maintenance_savings?: number }).annual_maintenance_savings ?? 0
@@ -1155,84 +1119,36 @@ export function ResultsView({
             </Card>
           </div>
 
-          <Card className="border-border bg-card">
+          <Card className="min-w-0 border-border bg-card">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">12-Month Savings Projection</CardTitle>
+              <CardTitle className="text-sm font-medium">When does fixing it pay off?</CardTitle>
+              <CardDescription>
+                Cumulative net = monthly savings x months - total fix cost.
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="h-56 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <RechartsAreaChart data={roiChartData}>
-                    <defs>
-                      <linearGradient id="savingsFill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.35} />
-                        <stop offset="95%" stopColor="#10b981" stopOpacity={0.03} />
-                      </linearGradient>
-                      <linearGradient id="costFill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#f97316" stopOpacity={0.28} />
-                        <stop offset="95%" stopColor="#f97316" stopOpacity={0.02} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid stroke="rgba(205, 204, 202, 0.08)" vertical={false} />
-                    <XAxis
-                      dataKey="month"
-                      tick={{ fill: '#797876', fontSize: 12 }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      tick={{ fill: '#797876', fontSize: 12 }}
-                      axisLine={false}
-                      tickLine={false}
-                      tickFormatter={(value) => `$${Number(value).toLocaleString()}`}
-                    />
-                    <RechartsTooltip
-                      formatter={(value: unknown, name: unknown) => {
-                        const numericValue = Array.isArray(value)
-                          ? Number(value[0] ?? 0)
-                          : Number(value ?? 0);
-                        return [`$${numericValue.toLocaleString()}`, String(name ?? '')];
-                      }}
-                      contentStyle={{
-                        backgroundColor: '#1c1b19',
-                        border: '1px solid rgba(205, 204, 202, 0.12)',
-                        borderRadius: '10px',
-                        color: '#cdccca',
-                      }}
-                      itemStyle={{ color: '#cdccca' }}
-                      labelStyle={{ color: '#797876' }}
-                    />
-                    <RechartsLegend wrapperStyle={{ color: '#cdccca', fontSize: '12px' }} />
-                    <Area
-                      type="monotone"
-                      dataKey="Cumulative Savings"
-                      stroke="#10b981"
-                      fill="url(#savingsFill)"
-                      strokeWidth={3}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="Fix Cost"
-                      stroke="#f97316"
-                      fill="url(#costFill)"
-                      strokeWidth={3}
-                    />
-                  </RechartsAreaChart>
-                </ResponsiveContainer>
-              </div>
+              <RoiBreakEvenChart
+                totalFixCost={roiValues.total_fix_cost}
+                annualSavings={roiValues.annual_maintenance_savings}
+                paybackMonths={roiValues.payback_months}
+                roi3yPct={roiValues['3_year_roi_pct']}
+              />
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="contributors" className="space-y-6">
-          <ContributorInsights
-            ownershipSummary={repoSummary?.ownership_summary ?? null}
-            findings={currentScanFindings}
-          />
-        </TabsContent>
+        {isEngineer && (
+          <TabsContent value="contributors" className="space-y-6">
+            <ContributorInsights
+              ownershipSummary={repoSummary?.ownership_summary ?? null}
+              findings={currentScanFindings}
+            />
+          </TabsContent>
+        )}
       </Tabs>
 
-      <div className="grid gap-4 xl:grid-cols-3">
+      <div className={cn('grid gap-4', isEngineer && 'xl:grid-cols-3')}>
+        {isEngineer && (
         <Card className="border-border bg-card">
           <CardHeader>
             <CardTitle>Top Modules</CardTitle>
@@ -1271,6 +1187,7 @@ export function ResultsView({
             )}
           </CardContent>
         </Card>
+        )}
 
         <Card className="border-border bg-card">
           <CardHeader>
@@ -1290,7 +1207,7 @@ export function ResultsView({
                 >
                   <div className="mb-2 flex items-center justify-between gap-2">
                     <p className="text-sm font-medium text-foreground">
-                      {formatCategoryName(bucket)}
+                      {humanize(bucket)}
                     </p>
                     <Badge variant="outline">{items.length}</Badge>
                   </div>
@@ -1310,6 +1227,7 @@ export function ResultsView({
           </CardContent>
         </Card>
 
+        {isEngineer && (
         <Card className="border-border bg-card">
           <CardHeader>
             <CardTitle>Data Confidence</CardTitle>
@@ -1344,12 +1262,15 @@ export function ResultsView({
             </div>
           </CardContent>
         </Card>
+        )}
       </div>
 
+      {isEngineer && (
       <div className="grid gap-4 xl:grid-cols-2">
         <FindingsCard title="Unresolved Findings" findings={unresolvedFindings?.items ?? []} />
         <FindingsCard title="Current Scan Findings" findings={currentScanFindings} />
       </div>
+      )}
     </section>
   );
 }

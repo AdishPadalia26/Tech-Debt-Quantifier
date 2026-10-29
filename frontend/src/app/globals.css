@@ -2,11 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Design tokens — single source of truth for color.
+ * Components use semantic names (bg-card, text-muted-foreground, text-danger…),
+ * never raw palette classes. Severity colors are reserved for risk meaning.
+ */
 :root {
   --background: #0f0e0d;
   --foreground: #cdccca;
   --card: #1c1b19;
   --card-foreground: #cdccca;
+  --surface-raised: #22211f;
   --popover: #201f1d;
   --popover-foreground: #cdccca;
   --primary: #4f98a3;
@@ -14,15 +20,37 @@
   --secondary: #22211f;
   --secondary-foreground: #cdccca;
   --muted: #2d2c2a;
-  --muted-foreground: #797876;
-  --accent: #313b3b;
-  --accent-foreground: #4f98a3;
+  /* 6.0:1 on --card, 4.9:1 on --muted (WCAG AA) */
+  --muted-foreground: #9a9996;
+  --accent: #253233;
+  --accent-foreground: #7cc3cd;
   --destructive: #dd6974;
   --destructive-foreground: #0f0e0d;
-  --border: rgba(205, 204, 202, 0.08);
+  --border: rgba(205, 204, 202, 0.1);
+  --border-strong: rgba(205, 204, 202, 0.18);
   --input: #22211f;
   --ring: #4f98a3;
   --radius: 0.5rem;
+
+  /* Status / severity */
+  --danger: #e2777f;
+  --warning: #d9a54a;
+  --success: #5fb589;
+  --info: #7cb4d8;
+  --severity-critical: #e2777f;
+  --severity-high: #e08f5a;
+  --severity-medium: #d9a54a;
+  --severity-low: #8aa4b0;
+
+  /* Categorical chart palette (ordered for adjacent-slice contrast) */
+  --chart-1: #4f98a3;
+  --chart-2: #d9a54a;
+  --chart-3: #5fb589;
+  --chart-4: #e08f5a;
+  --chart-5: #7cb4d8;
+  --chart-6: #c98bb5;
+  --chart-7: #a9a58a;
+  --chart-8: #e2777f;
 }
 
 @layer base {
@@ -32,18 +60,36 @@
 
   html {
     color-scheme: dark;
-    scroll-behavior: smooth;
   }
 
   body {
     @apply min-h-screen bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
-    background-image:
-      radial-gradient(circle at top, rgba(79, 152, 163, 0.08), transparent 32%),
-      linear-gradient(to bottom, rgba(255, 255, 255, 0.015), transparent 35%);
   }
 
   a {
     @apply transition-colors;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--focus-ring, var(--ring));
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  /* Aligned money / hours columns */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

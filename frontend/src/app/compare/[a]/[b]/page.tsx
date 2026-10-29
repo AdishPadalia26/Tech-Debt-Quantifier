@@ -18,50 +18,50 @@ function ScanColumn({
   scan: ScanSummaryResponse | null;
 }) {
   return (
-    <div className="flex-1 rounded-xl border border-gray-700 bg-gray-800 p-5">
-      <p className="mb-4 text-xs uppercase tracking-wider text-gray-500">{label}</p>
+    <div className="flex-1 rounded-xl border border-border bg-surface-raised p-5">
+      <p className="mb-4 text-xs uppercase tracking-wider text-muted-foreground">{label}</p>
       {scan ? (
         <div className="space-y-4">
           <div>
-            <p className="text-xs text-gray-400">Scan ID</p>
-            <p className="font-mono text-sm text-white truncate">{scan.scan_id}</p>
+            <p className="text-xs text-muted-foreground">Scan ID</p>
+            <p className="font-mono text-sm text-foreground truncate">{scan.scan_id}</p>
           </div>
           {scan.created_at && (
             <div>
-              <p className="text-xs text-gray-400">Date</p>
-              <p className="text-sm text-white">
+              <p className="text-xs text-muted-foreground">Date</p>
+              <p className="text-sm text-foreground">
                 {new Date(scan.created_at).toLocaleString()}
               </p>
             </div>
           )}
           <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-lg bg-gray-900/60 p-3 border border-gray-700">
-              <p className="text-xs text-gray-400 mb-1">Debt Score</p>
-              <p className="font-mono text-2xl font-bold text-white">
+            <div className="rounded-lg bg-card p-3 border border-border">
+              <p className="text-xs text-muted-foreground mb-1">Debt Score</p>
+              <p className="font-mono text-2xl font-bold text-foreground">
                 {scan.debt_score.toFixed(1)}
               </p>
             </div>
-            <div className="rounded-lg bg-gray-900/60 p-3 border border-gray-700">
-              <p className="text-xs text-gray-400 mb-1">Total Cost</p>
-              <p className="font-mono text-2xl font-bold text-white">
+            <div className="rounded-lg bg-card p-3 border border-border">
+              <p className="text-xs text-muted-foreground mb-1">Total Cost</p>
+              <p className="font-mono text-2xl font-bold text-foreground">
                 ${Math.round(scan.total_cost_usd).toLocaleString()}
               </p>
             </div>
-            <div className="rounded-lg bg-gray-900/60 p-3 border border-gray-700">
-              <p className="text-xs text-gray-400 mb-1">Hours</p>
-              <p className="font-mono text-2xl font-bold text-white">
+            <div className="rounded-lg bg-card p-3 border border-border">
+              <p className="text-xs text-muted-foreground mb-1">Hours</p>
+              <p className="font-mono text-2xl font-bold text-foreground">
                 {scan.total_hours.toFixed(1)}
               </p>
             </div>
-            <div className="rounded-lg bg-gray-900/60 p-3 border border-gray-700">
-              <p className="text-xs text-gray-400 mb-1">Sprints</p>
-              <p className="font-mono text-2xl font-bold text-white">
+            <div className="rounded-lg bg-card p-3 border border-border">
+              <p className="text-xs text-muted-foreground mb-1">Sprints</p>
+              <p className="font-mono text-2xl font-bold text-foreground">
                 {scan.total_sprints.toFixed(1)}
               </p>
             </div>
           </div>
           <div>
-            <p className="text-xs text-gray-400 mb-2">Cost by Category</p>
+            <p className="text-xs text-muted-foreground mb-2">Cost by Category</p>
             <div className="space-y-2">
               {Object.entries(scan.cost_by_category)
                 .filter(([, v]) => v.cost_usd > 0)
@@ -72,10 +72,10 @@ function ScanColumn({
                     key={key}
                     className="flex items-center justify-between text-sm"
                   >
-                    <span className="capitalize text-gray-300">
+                    <span className="capitalize text-foreground">
                       {key.replace(/_/g, ' ')}
                     </span>
-                    <span className="font-mono text-gray-400">
+                    <span className="font-mono text-muted-foreground">
                       ${Math.round(val.cost_usd).toLocaleString()}
                     </span>
                   </div>
@@ -84,13 +84,13 @@ function ScanColumn({
           </div>
           <Link
             href={`/scans/${scan.scan_id}`}
-            className="block text-center text-sm text-purple-400 hover:text-purple-300 mt-2"
+            className="block text-center text-sm text-primary hover:text-accent-foreground mt-2"
           >
             Open full scan →
           </Link>
         </div>
       ) : (
-        <p className="text-gray-500 text-sm">Loading…</p>
+        <p className="text-muted-foreground text-sm">Loading…</p>
       )}
     </div>
   );
@@ -128,44 +128,44 @@ export default function ComparePage({ params }: Props) {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-gray-950 text-white px-6 py-12">
-        <div className="max-w-6xl mx-auto text-gray-400">Loading comparison…</div>
-      </main>
+      <div className="w-full min-w-0">
+        <div className="max-w-6xl mx-auto text-muted-foreground">Loading comparison…</div>
+      </div>
     );
   }
 
   if (error) {
     return (
-      <main className="min-h-screen bg-gray-950 text-white px-6 py-12">
+      <div className="w-full min-w-0">
         <div className="max-w-6xl mx-auto space-y-4">
-          <p className="text-red-400">{error}</p>
-          <Link href="/" className="text-purple-400 hover:text-purple-300">
+          <p className="text-danger">{error}</p>
+          <Link href="/" className="text-primary hover:text-accent-foreground">
             Back to Scanner
           </Link>
         </div>
-      </main>
+      </div>
     );
   }
 
   const summary = comparison?.summary;
 
   return (
-    <main className="min-h-screen bg-gray-950 text-white px-6 py-12">
+    <div className="w-full min-w-0">
       <div className="max-w-6xl mx-auto space-y-8">
         {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-gray-500 text-sm uppercase tracking-wider mb-1">
+            <p className="text-muted-foreground text-sm uppercase tracking-wider mb-1">
               Scan Comparison
             </p>
-            <h1 className="text-2xl font-bold text-white">
+            <h1 className="text-2xl font-bold text-foreground">
               Baseline vs Target
             </h1>
-            <p className="text-gray-400 text-sm mt-1 font-mono">
+            <p className="text-muted-foreground text-sm mt-1 font-mono">
               {params.a.slice(0, 12)}… → {params.b.slice(0, 12)}…
             </p>
           </div>
-          <Link href="/" className="text-sm text-purple-400 hover:text-purple-300">
+          <Link href="/" className="text-sm text-primary hover:text-accent-foreground">
             Back to Scanner
           </Link>
         </div>
@@ -180,14 +180,14 @@ export default function ComparePage({ params }: Props) {
               { label: 'Hours delta', value: summary.hours_delta, prefix: '', fmt: (v: number) => v.toFixed(1) },
             ].map(({ label, value, prefix, fmt }) => {
               const color =
-                value > 0 ? 'text-red-400' : value < 0 ? 'text-emerald-400' : 'text-gray-400';
+                value > 0 ? 'text-danger' : value < 0 ? 'text-success' : 'text-muted-foreground';
               const sign = value > 0 ? '+' : '';
               return (
                 <div
                   key={label}
-                  className="rounded-xl border border-gray-700 bg-gray-800 p-4"
+                  className="rounded-xl border border-border bg-surface-raised p-4"
                 >
-                  <p className="text-xs uppercase tracking-wider text-gray-500 mb-2">{label}</p>
+                  <p className="text-xs uppercase tracking-wider text-muted-foreground mb-2">{label}</p>
                   <p className={`font-mono text-2xl font-bold ${color}`}>
                     {sign}{prefix}{fmt(value).toLocaleString()}
                   </p>
@@ -200,12 +200,12 @@ export default function ComparePage({ params }: Props) {
         {/* Side-by-side scan columns */}
         <div className="flex flex-col md:flex-row gap-4">
           <ScanColumn label="Baseline (base)" scan={baseScan} />
-          <div className="flex items-center justify-center md:flex-col gap-2 py-4 text-gray-600">
-            <div className="w-px h-full bg-gray-700 hidden md:block" />
-            <span className="text-xs font-mono bg-gray-800 px-2 py-1 rounded border border-gray-700">
+          <div className="flex items-center justify-center md:flex-col gap-2 py-4 text-muted-foreground">
+            <div className="w-px h-full bg-muted hidden md:block" />
+            <span className="text-xs font-mono bg-surface-raised px-2 py-1 rounded border border-border">
               vs
             </span>
-            <div className="w-px h-full bg-gray-700 hidden md:block" />
+            <div className="w-px h-full bg-muted hidden md:block" />
           </div>
           <ScanColumn label="Target (newer)" scan={targetScan} />
         </div>
@@ -214,35 +214,35 @@ export default function ComparePage({ params }: Props) {
         {comparison && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Added */}
-            <div className="rounded-xl border border-gray-700 bg-gray-800 p-5">
+            <div className="rounded-xl border border-border bg-surface-raised p-5">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-white">New Findings</h3>
-                <span className="rounded-full bg-red-500/15 px-2 py-0.5 text-xs font-semibold text-red-400">
+                <h3 className="text-sm font-semibold text-foreground">New Findings</h3>
+                <span className="rounded-full bg-danger/15 px-2 py-0.5 text-xs font-semibold text-danger">
                   +{comparison.added_findings.length}
                 </span>
               </div>
               {comparison.added_findings.length === 0 ? (
-                <p className="text-sm text-gray-500">No new findings — great!</p>
+                <p className="text-sm text-muted-foreground">No new findings — great!</p>
               ) : (
                 <div className="space-y-2 max-h-64 overflow-y-auto">
                   {comparison.added_findings.slice(0, 12).map((f) => (
                     <div
                       key={f.id}
-                      className="rounded-lg bg-gray-900/60 p-3 border border-gray-700/50"
+                      className="rounded-lg bg-card p-3 border border-border"
                     >
-                      <p className="text-xs text-red-400 font-medium capitalize">
+                      <p className="text-xs text-danger font-medium capitalize">
                         {f.severity} · {f.category.replace(/_/g, ' ')}
                       </p>
-                      <p className="text-xs text-gray-300 mt-1 font-mono truncate">
+                      <p className="text-xs text-foreground mt-1 font-mono truncate">
                         {f.file_path}
                       </p>
-                      <p className="text-xs text-gray-500 mt-0.5">
+                      <p className="text-xs text-muted-foreground mt-0.5">
                         ${Math.round(f.cost_usd).toLocaleString()}
                       </p>
                     </div>
                   ))}
                   {comparison.added_findings.length > 12 && (
-                    <p className="text-xs text-gray-500 text-center pt-1">
+                    <p className="text-xs text-muted-foreground text-center pt-1">
                       +{comparison.added_findings.length - 12} more
                     </p>
                   )}
@@ -251,35 +251,35 @@ export default function ComparePage({ params }: Props) {
             </div>
 
             {/* Resolved */}
-            <div className="rounded-xl border border-gray-700 bg-gray-800 p-5">
+            <div className="rounded-xl border border-border bg-surface-raised p-5">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-white">Resolved</h3>
-                <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-semibold text-emerald-400">
+                <h3 className="text-sm font-semibold text-foreground">Resolved</h3>
+                <span className="rounded-full bg-success/15 px-2 py-0.5 text-xs font-semibold text-success">
                   -{comparison.removed_findings.length}
                 </span>
               </div>
               {comparison.removed_findings.length === 0 ? (
-                <p className="text-sm text-gray-500">No findings resolved yet.</p>
+                <p className="text-sm text-muted-foreground">No findings resolved yet.</p>
               ) : (
                 <div className="space-y-2 max-h-64 overflow-y-auto">
                   {comparison.removed_findings.slice(0, 12).map((f) => (
                     <div
                       key={f.id}
-                      className="rounded-lg bg-gray-900/60 p-3 border border-gray-700/50"
+                      className="rounded-lg bg-card p-3 border border-border"
                     >
-                      <p className="text-xs text-emerald-400 font-medium capitalize">
+                      <p className="text-xs text-success font-medium capitalize">
                         {f.severity} · {f.category.replace(/_/g, ' ')}
                       </p>
-                      <p className="text-xs text-gray-300 mt-1 font-mono truncate">
+                      <p className="text-xs text-foreground mt-1 font-mono truncate">
                         {f.file_path}
                       </p>
-                      <p className="text-xs text-gray-500 mt-0.5">
+                      <p className="text-xs text-muted-foreground mt-0.5">
                         saved ${Math.round(f.cost_usd).toLocaleString()}
                       </p>
                     </div>
                   ))}
                   {comparison.removed_findings.length > 12 && (
-                    <p className="text-xs text-gray-500 text-center pt-1">
+                    <p className="text-xs text-muted-foreground text-center pt-1">
                       +{comparison.removed_findings.length - 12} more
                     </p>
                   )}
@@ -288,34 +288,34 @@ export default function ComparePage({ params }: Props) {
             </div>
 
             {/* Severity changes */}
-            <div className="rounded-xl border border-gray-700 bg-gray-800 p-5">
+            <div className="rounded-xl border border-border bg-surface-raised p-5">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-white">Severity Changes</h3>
-                <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-400">
+                <h3 className="text-sm font-semibold text-foreground">Severity Changes</h3>
+                <span className="rounded-full bg-warning/15 px-2 py-0.5 text-xs font-semibold text-warning">
                   {comparison.severity_changed.length}
                 </span>
               </div>
               {comparison.severity_changed.length === 0 ? (
-                <p className="text-sm text-gray-500">No severity changes.</p>
+                <p className="text-sm text-muted-foreground">No severity changes.</p>
               ) : (
                 <div className="space-y-2 max-h-64 overflow-y-auto">
                   {comparison.severity_changed.slice(0, 12).map((sc) => (
                     <div
                       key={sc.id}
-                      className="rounded-lg bg-gray-900/60 p-3 border border-gray-700/50"
+                      className="rounded-lg bg-card p-3 border border-border"
                     >
-                      <p className="text-xs text-amber-400 font-medium font-mono">
+                      <p className="text-xs text-warning font-medium font-mono">
                         {sc.from_severity} → {sc.to_severity}
                       </p>
                       {sc.file_path && (
-                        <p className="text-xs text-gray-300 mt-1 font-mono truncate">
+                        <p className="text-xs text-foreground mt-1 font-mono truncate">
                           {sc.file_path}
                         </p>
                       )}
                     </div>
                   ))}
                   {comparison.severity_changed.length > 12 && (
-                    <p className="text-xs text-gray-500 text-center pt-1">
+                    <p className="text-xs text-muted-foreground text-center pt-1">
                       +{comparison.severity_changed.length - 12} more
                     </p>
                   )}
@@ -325,6 +325,6 @@ export default function ComparePage({ params }: Props) {
           </div>
         )}
       </div>
-    </main>
+    </div>
   );
 }

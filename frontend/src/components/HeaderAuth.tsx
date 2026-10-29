@@ -81,7 +81,7 @@ export function HeaderAuth() {
           </Button>
         </>
       ) : (
-        <Button size="sm" onClick={handleLogin}>
+        <Button variant="outline" size="sm" onClick={handleLogin}>
           <GitBranch className="mr-2 size-4" />
           Sign in with GitHub
         </Button>

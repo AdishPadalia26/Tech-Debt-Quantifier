@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
+from database.crud import strip_secrets
 from database.models import Scan
 
 logger = logging.getLogger(__name__)
@@ -22,11 +23,11 @@ def get_result_payload(job_id: str, db: Session) -> dict[str, Any] | None:
     job = get_job(job_id)
     if job is not None:
         if job.get("status") == "complete":
-            return job.get("result")
+            return strip_secrets(job.get("result"))
         return None
 
     scan = db.query(Scan).filter(Scan.job_id == job_id).first()
-    return scan.raw_result if scan else None
+    return strip_secrets(scan.raw_result) if scan else None
 
 
 def build_pdf_response(job_id: str, result: dict[str, Any]) -> Response:

@@ -1,41 +1,44 @@
-"""Rate Intelligence Agent - Dynamic market rate fetching.
+"""Rate Intelligence Agent - live, cited hourly engineer rates.
 
-Finds current market rates for any technology using multiple sources:
-- BLS API (government data)
-- Levels.fyi (real offer letters)
-- Stack Overflow Survey (community data)
-- DuckDuckGo (supplementary search)
+``blend_rates`` queries four sources in parallel under a hard time box:
+- BLS API, OES 15-1252 Software Developers (weighted .40, loaded rate)
+- Levels.fyi (.30, total compensation)
+- Stack Overflow Developer Survey (.20, from a disk-cached zip only)
+- DuckDuckGo snippets (.10)
 
-All results cached 7 days using CacheManager.
+Each source that fails falls back (per source) to the cited table in
+``data.reference_tables`` and is excluded from the weighted blend. If no
+source is live the table rate is returned with ``live: False``. Successes
+are cached 24h, failures 1h. ENGINEER_HOURLY_RATE is used only when no live source succeeds.
 """
 
-import json
+import csv
+import io
 import logging
+import os
 import re
+import statistics
+import threading
 import zipfile
-from concurrent.futures import ThreadPoolExecutor
-from io import BytesIO
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import httpx
 
-from core.cache_manager import get_cache
+from data.reference_tables import (
+    HOURLY_RATE_TABLE,
+    HOURS_PER_YEAR,
+    LEVEL_RATIOS,
+    REFERENCE_TABLES_VERSION,
+    cached_call,
+    live_cache,
+    run_parallel,
+)
 
 logger = logging.getLogger(__name__)
 
-HOURS_PER_YEAR = 2080
-
-FALLBACK_RATES = {
-    "junior": 55.10,
-    "mid": 84.55,
-    "senior": 128.37,
-}
-
-ROLE_TO_YEARS = {
-    "junior": (0, 2),
-    "mid": (3, 7),
-    "senior": (8, 99),
-}
+FALLBACK_RATES = {level: e["value"] for level, e in HOURLY_RATE_TABLE.items()}
 
 WEIGHTS = {
     "bls": 0.40,
@@ -44,449 +47,413 @@ WEIGHTS = {
     "ddg": 0.10,
 }
 
+RATE_TIME_BOX_SECONDS = 8.0
+REQUEST_TIMEOUT_SECONDS = 5.0
+
+SO_ZIP_URL = (
+    "https://survey.stackoverflow.co/datasets/"
+    "stack-overflow-developer-survey-2024.zip"
+)
+SO_ZIP_PATH = Path(__file__).parent.parent / "data" / "cache" / "so_survey_2024.zip"
+SO_MAX_ROWS = 60_000
+# Download the survey zip to disk in the background when it is missing.
+SO_BACKGROUND_DOWNLOAD = True
+_so_download_lock = threading.Lock()
+_so_download_started = False
+
+LEVELS_URL = "https://www.levels.fyi/js/salaryData.json"
+
+SOURCE_LABELS = {
+    "bls": "BLS OES 15-1252",
+    "levels": "Levels.fyi",
+    "so": "Stack Overflow Survey 2024",
+    "ddg": "DuckDuckGo",
+}
+
+
+def _levels_from_mid(mid_hourly: float) -> dict[str, float]:
+    """Scale a mid-level hourly figure to junior/mid/senior via LEVEL_RATIOS."""
+    return {k: round(mid_hourly * r, 2) for k, r in LEVEL_RATIOS.items()}
+
+
+def _table_fallback(key: str, reason: str = "lookup failed") -> dict[str, Any]:
+    """Cited table rates for a failed source (live=False)."""
+    mid = HOURLY_RATE_TABLE["mid"]
+    return {
+        **FALLBACK_RATES,
+        "source": f"{mid['source']} (table fallback: {SOURCE_LABELS[key]} {reason})",
+        "citation": mid["citation"],
+        "fetched_at": datetime.now().isoformat(),
+        "live": False,
+    }
+
 
 class RateIntelligenceAgent:
-    """Dynamic rate intelligence using multiple sources.
-    
-    Tries sources in order of reliability:
-    1. BLS API (government)
-    2. Levels.fyi (real offers)
-    3. Stack Overflow Survey
-    4. DuckDuckGo search
-    """
+    """Live rate intelligence with per-source cited fallbacks."""
 
-    def __init__(self) -> None:
-        self._cache = get_cache()
-        self._ddg_search_count = 0
-        self._max_ddg_searches = 10
-
+    # ------------------------------------------------------------------ BLS
     def fetch_bls_rate(self) -> dict[str, Any]:
-        """Fetch rates from BLS API.
-        
-        Returns:
-            Dict with rate and source info
-        """
-        cache_key = self._cache.make_key("bls_rates")
-        
-        if self._cache.is_fresh(cache_key, "bls_data"):
-            cached = self._cache.get(cache_key, "bls_data")
-            if cached:
-                return cached
+        """Fetch BLS OES 15-1252 loaded rates (cached; table on failure)."""
+        from data.rate_fetcher import RateFetcher
 
-        try:
-            from data.rate_fetcher import RateFetcher
-            fetcher = RateFetcher()
-            data = fetcher.fetch_bls_rates()
-            
-            result = {
-                "junior": data.get("junior", FALLBACK_RATES["junior"]),
-                "mid": data.get("mid", FALLBACK_RATES["mid"]),
-                "senior": data.get("senior", FALLBACK_RATES["senior"]),
-                "source": f"BLS OES {data.get('year', '2024')}",
-                "live": True,
-                "fetched_at": data.get("fetched_at"),
-            }
-            
-            self._cache.set(cache_key, "bls_data", result)
-            return result
-            
-        except Exception as e:
-            logger.warning(f"BLS fetch failed: {e}", exc_info=True)
-            return self._bls_fallback()
-
-    def _bls_fallback(self) -> dict[str, Any]:
-        """Return BLS fallback rates with citation."""
+        data = RateFetcher().fetch_bls_rates()
         return {
-            "junior": FALLBACK_RATES["junior"],
-            "mid": FALLBACK_RATES["mid"],
-            "senior": FALLBACK_RATES["senior"],
-            "source": "BLS OES May 2023 (fallback)",
-            "live": False,
+            "junior": data.get("junior", FALLBACK_RATES["junior"]),
+            "mid": data.get("mid", FALLBACK_RATES["mid"]),
+            "senior": data.get("senior", FALLBACK_RATES["senior"]),
+            "source": data.get("source", "BLS OES"),
+            "citation": data.get("citation", ""),
+            "live": bool(data.get("live", False)),
+            "fetched_at": data.get("fetched_at"),
+        }
+
+    # ------------------------------------------------------------- Levels
+    def _live_levels(self, technology: str) -> dict[str, Any] | None:
+        """Download Levels.fyi data and compute median rates, or None."""
+        try:
+            with httpx.Client(timeout=REQUEST_TIMEOUT_SECONDS) as client:
+                response = client.get(LEVELS_URL)
+                response.raise_for_status()
+                salaries = response.json()
+        except Exception:
+            live_cache.set_failure("levels_http_fail")
+            raise
+        tech = technology.lower()
+        comps = [
+            float(s["totalyearlycompensation"])
+            for s in salaries
+            if float(s.get("totalyearlycompensation", 0) or 0) > 0
+            and (
+                tech in str(s.get("title", "")).lower()
+                or tech in str(s.get("companyName", "")).lower()
+            )
+        ]
+        if not comps:
+            return None
+        median_annual = statistics.median(comps)
+        return {
+            **_levels_from_mid(median_annual / HOURS_PER_YEAR),
+            "median_annual": median_annual,
+            "sample_size": len(comps),
+            "technology": technology,
+            "source": "Levels.fyi",
+            "citation": (
+                f"Levels.fyi salaryData.json: median total comp "
+                f"${median_annual:,.0f} for '{technology}' (n={len(comps)}) "
+                f"/ {HOURS_PER_YEAR} h"
+            ),
+            "fetched_at": datetime.now().isoformat(),
+            "live": True,
         }
 
     def fetch_levels_fyi(self, technology: str = "Python") -> dict[str, Any]:
-        """Fetch rates from Levels.fyi salary data.
-        
-        Args:
-            technology: Technology keyword to filter by
-            
-        Returns:
-            Dict with rates by experience level
-        """
-        cache_key = self._cache.make_key("levels_fyi", technology)
-        
-        if self._cache.is_fresh(cache_key, "levels_fyi"):
-            cached = self._cache.get(cache_key, "levels_fyi")
-            if cached:
-                return cached
+        """Fetch Levels.fyi rates for a technology (cached; table on failure)."""
+        # A dead endpoint is cached once, not once per technology.
+        hit, _ = live_cache.get("levels_http_fail")
+        if hit:
+            return _table_fallback("levels")
+        key = f"levels:{technology.lower()}"
+        result = cached_call(key, lambda: self._live_levels(technology))
+        return result or _table_fallback("levels")
 
+    # ------------------------------------------------------ Stack Overflow
+    @staticmethod
+    def _parse_years(raw: str) -> float | None:
+        """Parse the survey's YearsCodePro value."""
+        raw = (raw or "").strip()
+        if not raw or raw == "NA":
+            return None
+        if raw.startswith("Less than"):
+            return 0.5
+        if raw.startswith("More than"):
+            return 51.0
         try:
-            url = "https://www.levels.fyi/js/salaryData.json"
-            with httpx.Client(timeout=5) as client:
-                response = client.get(url)
-                response.raise_for_status()
-                salaries = response.json()
+            return float(raw)
+        except ValueError:
+            return None
 
-            filtered = [
-                s for s in salaries
-                if technology.lower() in str(s.get("title", "")).lower()
-                or technology.lower() in str(s.get("companyName", "")).lower()
-            ]
-
-            if not filtered:
-                return self._levels_fallback(technology)
-
-            filtered = [s for s in filtered if s.get("totalyearlycompensation", 0) > 0]
-            
-            total = sum(s["totalyearlycompensation"] for s in filtered)
-            median_annual = sorted(s["totalyearlycompensation"] for s in filtered)[
-                len(filtered) // 2
-            ]
-            median_hourly = median_annual / HOURS_PER_YEAR
-
-            result = {
-                "junior": median_hourly * 0.8,
-                "mid": median_hourly,
-                "senior": median_hourly * 1.3,
-                "median_annual": median_annual,
-                "median_hourly": median_hourly,
-                "sample_size": len(filtered),
-                "technology": technology,
-                "source": "Levels.fyi",
-                "live": True,
-            }
-
-            self._cache.set(cache_key, "levels_fyi", result)
-            return result
-
-        except Exception as e:
-            logger.warning(f"Levels.fyi fetch failed: {e}", exc_info=True)
-            fallback = self._levels_fallback(technology)
-            self._cache.set(cache_key, "levels_fyi", fallback)
-            return fallback
-
-    def _levels_fallback(self, technology: str) -> dict[str, Any]:
-        """Return Levels.fyi fallback rates."""
-        bls = self._bls_fallback()
+    def _parse_so_zip(self, path: Path) -> dict[str, Any] | None:
+        """Parse the survey zip: median US comp per experience band."""
+        with zipfile.ZipFile(path) as zf:
+            name = next(
+                n for n in zf.namelist()
+                if "survey_results" in n and n.endswith(".csv")
+            )
+            with zf.open(name) as raw:
+                reader = csv.DictReader(io.TextIOWrapper(raw, encoding="utf-8"))
+                bands: dict[str, list[float]] = {k: [] for k in LEVEL_RATIOS}
+                total = 0
+                for i, row in enumerate(reader):
+                    if i >= SO_MAX_ROWS:
+                        break
+                    if row.get("Country") != "United States of America":
+                        continue
+                    try:
+                        comp = float(row.get("ConvertedCompYearly") or 0)
+                    except ValueError:
+                        continue
+                    years = self._parse_years(row.get("YearsCodePro", ""))
+                    if years is None or not 0 < comp < 1_000_000:
+                        continue
+                    band = "junior" if years < 3 else "mid" if years < 8 else "senior"
+                    bands[band].append(comp)
+                    total += 1
+        if total < 50 or not all(bands.values()):
+            return None
+        rates = {k: round(statistics.median(v) / HOURS_PER_YEAR, 2) for k, v in bands.items()}
         return {
-            "junior": bls["junior"] * 1.05,
-            "mid": bls["mid"] * 1.05,
-            "senior": bls["senior"] * 1.05,
-            "technology": technology,
-            "source": "Levels.fyi (fallback)",
-            "live": False,
+            **rates,
+            "sample_size": total,
+            "source": "Stack Overflow Developer Survey 2024",
+            "citation": (
+                f"Stack Overflow Developer Survey 2024, US respondents "
+                f"(n={total}, first {SO_MAX_ROWS} rows), median "
+                "ConvertedCompYearly / 2080 h by YearsCodePro band. "
+                "https://survey.stackoverflow.co/"
+            ),
+            "fetched_at": datetime.now().isoformat(),
+            "live": True,
         }
 
-    def fetch_stackoverflow_rates(self) -> dict[str, Any]:
-        """Fetch rates from Stack Overflow Developer Survey.
-        
-        Downloads and parses the annual survey data.
-        Cached 30 days since survey is annual.
-        
-        Returns:
-            Dict with rates by experience level
-        """
-        cache_key = self._cache.make_key("stackoverflow_rates")
-        
-        if self._cache.is_fresh(cache_key, "stackoverflow"):
-            cached = self._cache.get(cache_key, "stackoverflow")
-            if cached:
-                return cached
-
+    def _download_so_zip(self) -> None:
+        """Background: download the survey zip to disk once."""
         try:
-            url = "https://survey.stackoverflow.co/datasets/stack-overflow-developer-survey-2024.zip"
-            
-            with httpx.Client(timeout=10) as client:
-                response = client.get(url)
+            SO_ZIP_PATH.parent.mkdir(parents=True, exist_ok=True)
+            tmp = SO_ZIP_PATH.with_suffix(".part")
+            with httpx.Client(timeout=120, follow_redirects=True) as client:
+                response = client.get(SO_ZIP_URL)
                 response.raise_for_status()
-                
-                with zipfile.ZipFile(BytesIO(response.content)) as zf:
-                    csv_name = [n for n in zf.namelist() if "survey_results" in n and n.endswith(".csv")][0]
-                    with zf.open(csv_name) as f:
-                        content = f.read().decode("utf-8", errors="ignore")
-            
-            lines = content.split("\n")
-            headers = lines[0].lower().split(",")
-            
-            comp_idx = next((i for i, h in enumerate(headers) if "convertedcomp" in h), None)
-            country_idx = next((i for i, h in enumerate(headers) if "country" in h), None)
-            years_idx = next((i for i, h in enumerate(headers) if "yearscodepro" in h), None)
-            
-            if comp_idx is None or country_idx is None:
-                return self._stackoverflow_fallback()
+                tmp.write_bytes(response.content)
+            tmp.replace(SO_ZIP_PATH)
+            live_cache.delete("so_survey")
+            logger.info("Stack Overflow survey zip cached to %s", SO_ZIP_PATH)
+        except Exception as exc:
+            logger.warning("SO survey background download failed: %s", exc)
 
-            us_data = []
-            for line in lines[1:10000]:
-                parts = line.split(",")
-                if len(parts) > max(comp_idx, country_idx, years_idx or 0):
-                    country = parts[country_idx].strip('"')
-                    if country == "United States of America":
-                        try:
-                            comp = float(parts[comp_idx])
-                            years_str = parts[years_idx].strip('"') if years_idx else "0"
-                            years = float(years_str) if years_str else 0
-                            if 0 < comp < 1000000:
-                                us_data.append({"comp": comp, "years": years})
-                        except (ValueError, IndexError):
-                            continue
+    def _live_so(self) -> dict[str, Any] | None:
+        """Use the on-disk survey zip, or start a background download."""
+        global _so_download_started
+        if SO_ZIP_PATH.exists():
+            return self._parse_so_zip(SO_ZIP_PATH)
+        if SO_BACKGROUND_DOWNLOAD:
+            with _so_download_lock:
+                if not _so_download_started:
+                    _so_download_started = True
+                    threading.Thread(target=self._download_so_zip, daemon=True).start()
+        logger.info("SO survey zip not cached yet; skipping this scan")
+        return None
 
-            if len(us_data) < 50:
-                return self._stackoverflow_fallback()
+    def fetch_stackoverflow_rates(self) -> dict[str, Any]:
+        """Stack Overflow survey rates from the disk-cached zip (else table)."""
+        result = cached_call("so_survey", self._live_so)
+        return result or _table_fallback("so")
 
-            by_level = {"junior": [], "mid": [], "senior": []}
-            for d in us_data:
-                for role, (min_y, max_y) in ROLE_TO_YEARS.items():
-                    if min_y <= d["years"] <= max_y:
-                        by_level[role].append(d["comp"] / HOURS_PER_YEAR)
+    # ---------------------------------------------------------------- DDG
+    _DDG_PATTERNS = (
+        (re.compile(r"\$(\d+(?:\.\d+)?)\s*(?:per hour|/\s*hr|/\s*hour|hourly)", re.I), "hour"),
+        (re.compile(r"\$(\d{2,3}(?:,\d{3})+)\s*(?:per year|annual|a year|/\s*yr)", re.I), "year"),
+        (re.compile(r"\$(\d{2,3})\s*[kK]\s*(?:per year|annual|a year|/\s*yr)", re.I), "yearK"),
+    )
 
-            result = {
-                role: sum(vals) / len(vals) if vals else FALLBACK_RATES[role]
-                for role, vals in by_level.items()
-            }
-            result.update({
-                "sample_size": len(us_data),
-                "source": "SO Survey 2024",
-                "live": True,
-            })
+    def _live_ddg(self, technology: str) -> dict[str, Any] | None:
+        """Search DuckDuckGo snippets for hourly/annual pay figures."""
+        query = f"{technology} engineer average hourly rate salary"
+        try:
+            from ddgs import DDGS
 
-            self._cache.set(cache_key, "stackoverflow", result)
-            return result
-
-        except Exception as e:
-            logger.warning(f"Stack Overflow fetch failed: {e}", exc_info=True)
-            fallback = self._stackoverflow_fallback()
-            self._cache.set(cache_key, "stackoverflow", fallback)
-            return fallback
-
-    def _stackoverflow_fallback(self) -> dict[str, Any]:
-        """Return Stack Overflow fallback rates."""
+            with DDGS() as ddgs:
+                results = list(ddgs.text(query, max_results=5))
+        except Exception:
+            live_cache.set_failure("ddg_fail")
+            raise
+        figures: list[float] = []
+        urls: list[str] = []
+        for r in results:
+            snippet = r.get("body", "")
+            urls.append(r.get("href", ""))
+            for pattern, kind in self._DDG_PATTERNS:
+                for m in pattern.findall(snippet):
+                    value = float(m.replace(",", ""))
+                    if kind == "year":
+                        value /= HOURS_PER_YEAR
+                    elif kind == "yearK":
+                        value = value * 1000 / HOURS_PER_YEAR
+                    if 20 <= value <= 300:
+                        figures.append(value)
+        if not figures:
+            return None
+        median_rate = statistics.median(figures)
         return {
-            **FALLBACK_RATES,
-            "source": "SO Survey 2024 (fallback)",
-            "live": False,
+            **_levels_from_mid(median_rate),
+            "rate": median_rate,
+            "figures_found": len(figures),
+            "sources": urls[:3],
+            "technology": technology,
+            "source": "DuckDuckGo Search",
+            "citation": (
+                f"Median of {len(figures)} pay figures in web search snippets "
+                f"for '{query}': {', '.join(u for u in urls[:3] if u)}"
+            ),
+            "fetched_at": datetime.now().isoformat(),
+            "live": True,
         }
 
     def search_ddg_salary(self, technology: str) -> dict[str, Any]:
-        """Search DuckDuckGo for salary information.
-        
-        Uses free DuckDuckGo search (no API key needed).
-        Limited to 10 searches per full analysis.
-        
-        Args:
-            technology: Technology to search for
-            
-        Returns:
-            Dict with rate and search metadata
-        """
-        if self._ddg_search_count >= self._max_ddg_searches:
-            logger.info("DDG search limit reached")
-            return self._ddg_fallback(technology)
+        """Web-search salary figures for a technology (cached; table on failure)."""
+        hit, _ = live_cache.get("ddg_fail")
+        if hit:
+            return {**_table_fallback("ddg"), "rate": FALLBACK_RATES["mid"]}
+        result = cached_call(
+            f"ddg:{technology.lower()}", lambda: self._live_ddg(technology)
+        )
+        return result or {**_table_fallback("ddg"), "rate": FALLBACK_RATES["mid"]}
 
-        cache_key = self._cache.make_key("ddg_salary", technology)
-        
-        if self._cache.is_fresh(cache_key, "ddg_searches"):
-            cached = self._cache.get(cache_key, "ddg_searches")
-            if cached:
-                return cached
-
+    # -------------------------------------------------------------- blend
+    @staticmethod
+    def _engineer_rate_fallback() -> float | None:
+        """Read ENGINEER_HOURLY_RATE (fallback when all live sources fail); float if > 0."""
+        raw = os.getenv("ENGINEER_HOURLY_RATE", "").strip()
+        if not raw:
+            return None
         try:
-            from ddgs import DDGS
-            
-            query = f"{technology} engineer average hourly rate salary 2025"
-            
-            with DDGS() as ddgs:
-                results = list(ddgs.text(query, max_results=5))
-            
-            self._ddg_search_count += 1
-            
-            figures = []
-            sources = []
-            
-            for r in results:
-                snippet = r.get("body", "")
-                sources.append(r.get("href", ""))
-                
-                patterns = [
-                    r"\$(\d+(?:\.\d+)?)\s*(?:per hour|/hr|hourly)",
-                    r"\$(\d+(?:,\d+)?(?:\.\d+)?)[kK]\s*(?:per year|annual|/yr)",
-                    r"\$(\d+(?:,\d+)+)\s*(?:per year|annual)",
-                ]
-                
-                for pattern in patterns:
-                    matches = re.findall(pattern, snippet, re.IGNORECASE)
-                    for match in matches:
-                        try:
-                            value = float(match.replace(",", ""))
-                            if "k" in pattern.lower() and value < 1000:
-                                value *= 1000
-                            if "hourly" in pattern.lower() or "/hr" in pattern.lower():
-                                hourly = value
-                            else:
-                                hourly = value / HOURS_PER_YEAR
-                            
-                            if 20 <= hourly <= 300:
-                                figures.append(hourly)
-                        except ValueError:
-                            continue
-
-            if figures:
-                median_rate = sorted(figures)[len(figures) // 2]
-            else:
-                median_rate = self._ddg_fallback(technology)["rate"]
-
-            result = {
-                "rate": median_rate,
-                "figures_found": len(figures),
-                "sources": sources[:3],
-                "query_used": query,
-                "technology": technology,
-                "source": "DuckDuckGo Search",
-                "live": True,
-            }
-
-            self._cache.set(cache_key, "ddg_searches", result)
-            return result
-
-        except Exception as e:
-            logger.warning(f"DuckDuckGo search failed: {e}", exc_info=True)
-            return self._ddg_fallback(technology)
-
-    def _ddg_fallback(self, technology: str) -> dict[str, Any]:
-        """Return DuckDuckGo fallback rate."""
-        return {
-            "rate": FALLBACK_RATES["mid"],
-            "figures_found": 0,
-            "sources": [],
-            "query_used": None,
-            "technology": technology,
-            "source": "DuckDuckGo (fallback)",
-            "live": False,
-        }
+            value = float(raw)
+        except ValueError:
+            logger.warning("Ignoring invalid ENGINEER_HOURLY_RATE=%r", raw)
+            return None
+        return value if value > 0 else None
 
     def blend_rates(self, technology: str = "Python", role: str = "mid") -> dict[str, Any]:
-        """Blend rates from all sources with weights.
-        
+        """Blend live rates from all sources under a hard time box.
+
+        Failed or timed-out sources use the cited table value, are marked
+        live=False and get zero effective weight. The blend is a weighted
+        average over live sources only; with none live the table rate is used.
+
         Args:
             technology: Technology to search for
             role: Experience level (junior/mid/senior)
-            
+
         Returns:
-            Full blended rate result with confidence
+            Rate result with per-source {value, live, source, citation,
+            fetched_at}, sources_used, live_sources, reference_version
         """
-        sources = {}
-        total_weight = 0.0
-        live_count = 0
+        if role not in LEVEL_RATIOS:
+            logger.warning("Unknown role %r, using mid", role)
+            role = "mid"
+        entry = HOURLY_RATE_TABLE[role]
 
-        # Fetch all four sources concurrently instead of sequentially.
-        with ThreadPoolExecutor(max_workers=4) as ex:
-            f_bls    = ex.submit(self.fetch_bls_rate)
-            f_levels = ex.submit(self.fetch_levels_fyi, technology)
-            f_so     = ex.submit(self.fetch_stackoverflow_rates)
-            f_ddg    = ex.submit(self.search_ddg_salary, technology)
-            bls    = f_bls.result()
-            levels = f_levels.result()
-            so     = f_so.result()
-            ddg    = f_ddg.result()
-
-        sources["bls"] = {
-            "rate": bls.get(role, FALLBACK_RATES[role]),
-            "weight": WEIGHTS["bls"],
-            "live": bls.get("live", False),
-        }
-        if bls.get("live"):
-            live_count += 1
-            total_weight += WEIGHTS["bls"]
-
-        sources["levels"] = {
-            "rate": levels.get(role, FALLBACK_RATES[role]),
-            "weight": WEIGHTS["levels"],
-            "live": levels.get("live", False),
-        }
-        if levels.get("live"):
-            live_count += 1
-            total_weight += WEIGHTS["levels"]
-
-        sources["so"] = {
-            "rate": so.get(role, FALLBACK_RATES[role]),
-            "weight": WEIGHTS["so"],
-            "live": so.get("live", False),
-        }
-        if so.get("live"):
-            live_count += 1
-            total_weight += WEIGHTS["so"]
-
-        ddg_rate = ddg.get("rate", FALLBACK_RATES[role])
-        if role == "junior":
-            ddg_rate *= 0.8
-        elif role == "senior":
-            ddg_rate *= 1.3
-        sources["ddg"] = {
-            "rate": ddg_rate,
-            "weight": WEIGHTS["ddg"],
-            "live": ddg.get("live", False),
-        }
-        if ddg.get("live"):
-            live_count += 1
-            total_weight += WEIGHTS["ddg"]
-
-        if total_weight == 0:
-            total_weight = 1.0
-
-        blended = sum(
-            s["rate"] * (s["weight"] / total_weight)
-            for s in sources.values()
+        raw = run_parallel(
+            {
+                "bls": self.fetch_bls_rate,
+                "levels": lambda: self.fetch_levels_fyi(technology),
+                "so": self.fetch_stackoverflow_rates,
+                "ddg": lambda: self.search_ddg_salary(technology),
+            },
+            RATE_TIME_BOX_SECONDS,
         )
 
-        if live_count >= 3:
-            confidence = "high"
-        elif live_count >= 2:
-            confidence = "medium"
+        breakdown: dict[str, dict[str, Any]] = {}
+        live_weight = 0.0
+        for key, weight in WEIGHTS.items():
+            data = raw.get(key)
+            if not data:
+                data = _table_fallback(key, "timed out")
+            live = bool(data.get("live", False))
+            value = float(data.get(role, FALLBACK_RATES[role]))
+            breakdown[key] = {
+                "rate": round(value, 2),
+                "value": round(value, 2),
+                "weight": weight,
+                "effective_weight": 0.0,
+                "live": live,
+                "source": data.get("source", SOURCE_LABELS[key]),
+                "citation": data.get("citation", ""),
+                "fetched_at": data.get("fetched_at"),
+            }
+            if live:
+                live_weight += weight
+
+        live_sources = sum(1 for b in breakdown.values() if b["live"])
+        if live_weight > 0:
+            blended = 0.0
+            for b in breakdown.values():
+                if b["live"]:
+                    b["effective_weight"] = round(b["weight"] / live_weight, 4)
+                    blended += b["value"] * b["effective_weight"]
+            live_names = ", ".join(
+                SOURCE_LABELS[k] for k, b in breakdown.items() if b["live"]
+            )
+            source = f"Live blend: {live_names}"
+            citation = "; ".join(
+                f"{SOURCE_LABELS[k]}: {b['citation']}"
+                for k, b in breakdown.items() if b["live"]
+            )
+        elif (env_rate := self._engineer_rate_fallback()) is not None:
+            ratio = entry["value"] / HOURLY_RATE_TABLE["mid"]["value"]
+            blended = env_rate * ratio
+            logger.warning(
+                "No live rate sources succeeded; using ENGINEER_HOURLY_RATE fallback"
+            )
+            source = "env_fallback"
+            citation = (
+                f"ENGINEER_HOURLY_RATE=${env_rate:.2f}/h (mid) from .env, used "
+                f"because no live source succeeded; level ratio {ratio:.2f} applied"
+            )
         else:
-            confidence = "low"
+            logger.warning(
+                "No live rate sources succeeded; using cited reference table"
+            )
+            blended = float(entry["value"])
+            source = entry["source"] + " (table fallback)"
+            citation = entry["citation"]
 
-        citations = [
-            f"BLS OES: {sources['bls']['rate']:.2f}/hr",
-            f"Levels.fyi: {sources['levels']['rate']:.2f}/hr",
-            f"SO Survey: {sources['so']['rate']:.2f}/hr",
-            f"DDG: {sources['ddg']['rate']:.2f}/hr",
-        ]
+        confidence = "high" if live_sources >= 3 else "medium" if live_sources >= 2 else "low"
+        return self._result(
+            technology, role, round(blended, 2), confidence, source, citation,
+            breakdown, live_sources=live_sources, sources_used=live_sources,
+            live=live_sources > 0,
+        )
 
+    @staticmethod
+    def _result(
+        technology: str,
+        role: str,
+        rate: float,
+        confidence: str,
+        source: str,
+        citation: str,
+        breakdown: dict[str, dict[str, Any]],
+        *,
+        live_sources: int,
+        sources_used: int,
+        live: bool,
+    ) -> dict[str, Any]:
+        """Assemble the blend_rates result dict."""
         return {
             "technology": technology,
             "role": role,
-            "blended_rate": round(blended, 2),
+            "blended_rate": rate,
             "confidence": confidence,
-            "sources_used": live_count,
-            "breakdown": {
-                k: {**v, "rate": round(v["rate"], 2)}
-                for k, v in sources.items()
-            },
-            "citations": citations,
-            "cached_until": "7 days",
+            "sources_used": sources_used,
+            "live_sources": live_sources,
+            "breakdown": breakdown,
+            "citations": [
+                f"{k}: {b['rate']:.2f}/hr ({'live' if b['live'] else 'table'})"
+                for k, b in breakdown.items()
+            ],
+            "cached_until": "24h success / 1h failure",
+            "source": source,
+            "citation": citation,
+            "live": live,
+            "reference_version": REFERENCE_TABLES_VERSION,
         }
 
     def get_rate(self, technology: str = "Python", role: str = "mid") -> float:
-        """Simple wrapper returning just the blended rate.
-        
-        Args:
-            technology: Technology keyword
-            role: Experience level
-            
-        Returns:
-            Blended hourly rate
-        """
-        result = self.blend_rates(technology, role)
-        return result["blended_rate"]
+        """Simple wrapper returning just the blended rate."""
+        return self.blend_rates(technology, role)["blended_rate"]
 
     def get_all_rates(self, technology: str = "Python") -> dict[str, Any]:
-        """Get all rates for all experience levels.
-        
-        Args:
-            technology: Technology keyword
-            
-        Returns:
-            Dict with rates for all roles
-        """
+        """Get blended rates for all experience levels."""
         return {
             "junior": self.get_rate(technology, "junior"),
             "mid": self.get_rate(technology, "mid"),
