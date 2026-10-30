@@ -1,9 +1,13 @@
-"""Security Cost Agent - live breach cost and risk data, cited fallbacks.
+"""Security Cost Agent - live breach cost, cited fallbacks.
 
-IBM Cost of a Data Breach and Verizon DBIR figures are looked up via web
-search snippets in parallel under a hard time box, fetched once per agent
-(scan) and cached 24h on success / 1h on failure. Strict patterns are used;
-anything that does not match falls back to the cited table value.
+The IBM Cost of a Data Breach average is looked up via web search snippets
+under a hard time box, fetched once per agent (scan) and cached 24h on
+success / 1h on failure. Search backends are tried in order until one yields
+a strict match; anything that does not match falls back to the cited table.
+
+The base breach probability always comes from the cited DBIR-derived table:
+Verizon's DBIR does not publish a "probability of breach" percentage, so
+there is nothing to look up live.
 """
 
 import logging
@@ -30,7 +34,11 @@ DBIR_BASE_RATE = DBIR_TABLE["value"]
 # CVSS score at or above which expected breach value is added.
 BREACH_CVSS_THRESHOLD = 7.0
 
-SECURITY_TIME_BOX_SECONDS = 5.0
+SECURITY_TIME_BOX_SECONDS = 10.0
+
+# Tried in order. "auto" mixes backends at random and several (google, mojeek,
+# yahoo, brave) return nothing for these queries, which made lookups flaky.
+SEARCH_BACKENDS = ("duckduckgo", "bing", "yandex")
 
 # Sane range for an average total breach cost, in USD.
 MIN_BREACH_COST = 2_000_000
@@ -38,12 +46,7 @@ MAX_BREACH_COST = 15_000_000
 
 _BREACH_COST_RE = re.compile(
     r"(?:cost of a data breach|data breach cost|average (?:total )?cost)"
-    r"[^.$]{0,100}\$\s*(\d+(?:\.\d+)?)\s*(?:million|M)\b",
-    re.IGNORECASE,
-)
-_BREACH_PROB_RE = re.compile(
-    r"(?:probability|likelihood|chance)[^.%]{0,80}?breach[^.%]{0,60}?"
-    r"(\d+(?:\.\d+)?)\s*%",
+    r"[^.$]{0,100}(?:\$|USD)\s*(\d+(?:\.\d+)?)\s*(?:million|M)\b",
     re.IGNORECASE,
 )
 
@@ -58,21 +61,12 @@ def parse_breach_cost(text: str) -> float | None:
     return statistics.median(values) if values else None
 
 
-def parse_breach_probability(text: str) -> float | None:
-    """Strictly extract a breach probability (0-1) from snippet text."""
-    values = [
-        float(m) / 100 for m in _BREACH_PROB_RE.findall(text)
-        if 0.5 <= float(m) <= 30
-    ]
-    return statistics.median(values) if values else None
-
-
-def _search_snippets(query: str) -> tuple[str, list[str]]:
-    """Run a web search; return (joined snippet text, result URLs)."""
+def _search_snippets(query: str, backend: str) -> tuple[str, list[str]]:
+    """Run a web search on one backend; return (snippet text, result URLs)."""
     from ddgs import DDGS
 
     with DDGS() as ddgs:
-        results = list(ddgs.text(query, max_results=5))
+        results = list(ddgs.text(query, max_results=5, backend=backend))
     text = " ".join(r.get("body", "") for r in results)
     return text, [r.get("href", "") for r in results if r.get("href")]
 
@@ -84,48 +78,36 @@ class SecurityCostAgent:
         self._reference: dict[str, dict[str, Any]] | None = None
 
     def _live_breach(self) -> dict[str, Any] | None:
-        """Look up the IBM average breach cost; None if no strict match."""
-        text, urls = _search_snippets(
-            "IBM Cost of a Data Breach Report global average total cost"
-        )
-        cost = parse_breach_cost(text)
-        if cost is None:
-            return None
-        return {
-            "average_breach_cost": cost,
-            "year": datetime.now().year,
-            "source": "IBM Cost of a Data Breach Report (web search)",
-            "citation": f"Search snippets matched ${cost/1e6:.2f}M: {', '.join(urls[:3])}",
-            "url": "https://www.ibm.com/reports/data-breach",
-            "live": True,
-            "fetched_at": datetime.now().isoformat(),
-        }
-
-    def _live_dbir(self) -> dict[str, Any] | None:
-        """Look up a DBIR breach probability; None if no strict match."""
-        text, urls = _search_snippets(
-            "Verizon DBIR probability of breach percentage organizations"
-        )
-        prob = parse_breach_probability(text)
-        if prob is None:
-            return None
-        return {
-            "base_breach_probability": prob,
-            "source": "Verizon DBIR (web search)",
-            "citation": f"Search snippets matched {prob*100:.1f}%: {', '.join(urls[:3])}",
-            "live": True,
-            "fetched_at": datetime.now().isoformat(),
-        }
+        """Look up the IBM average breach cost; None if no backend matches."""
+        query = "IBM Cost of a Data Breach Report global average total cost"
+        for backend in SEARCH_BACKENDS:
+            try:
+                text, urls = _search_snippets(query, backend)
+            except Exception as exc:  # no results / blocked: try the next one
+                logger.debug("Breach search on %s failed: %s", backend, exc)
+                continue
+            cost = parse_breach_cost(text)
+            if cost is None:
+                continue
+            return {
+                "average_breach_cost": cost,
+                "year": datetime.now().year,
+                "source": f"IBM Cost of a Data Breach Report (web search, {backend})",
+                "citation": (
+                    f"Search snippets matched ${cost/1e6:.2f}M: {', '.join(urls[:3])}"
+                ),
+                "url": "https://www.ibm.com/reports/data-breach",
+                "live": True,
+                "fetched_at": datetime.now().isoformat(),
+            }
+        return None
 
     def _load_reference(self) -> dict[str, dict[str, Any]]:
-        """Fetch breach + DBIR data once per agent, in parallel, time-boxed."""
+        """Fetch breach data once per agent, time-boxed; DBIR from the table."""
         if self._reference is not None:
             return self._reference
         raw = run_parallel(
-            {
-                "breach": lambda: cached_call("ibm_breach", self._live_breach),
-                "dbir": lambda: cached_call("dbir_prob", self._live_dbir),
-            },
+            {"breach": lambda: cached_call("ibm_breach", self._live_breach)},
             SECURITY_TIME_BOX_SECONDS,
         )
         now = datetime.now().isoformat()
@@ -138,15 +120,15 @@ class SecurityCostAgent:
             "live": False,
             "fetched_at": now,
         }
-        dbir = raw.get("dbir") or {
+        dbir = {
             "base_breach_probability": DBIR_TABLE["value"],
             "source": DBIR_TABLE["source"],
             "citation": DBIR_TABLE["citation"],
             "live": False,
             "fetched_at": now,
         }
-        if not breach["live"] and not dbir["live"]:
-            logger.warning("No live security data; using cited reference tables")
+        if not breach["live"]:
+            logger.warning("No live breach cost found; using cited reference table")
         self._reference = {"breach": breach, "dbir": dbir}
         return self._reference
 
@@ -155,7 +137,7 @@ class SecurityCostAgent:
         return self._load_reference()["breach"]
 
     def fetch_dbir_probability(self) -> dict[str, Any]:
-        """Return base breach probability (live if found, else table)."""
+        """Return base breach probability (cited table; not published live)."""
         return self._load_reference()["dbir"]
 
     def _get_cwe_breach_cost(self, cwe_id: str | None) -> float:

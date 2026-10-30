@@ -18,6 +18,20 @@ interface Props {
   roi3yPct?: number;
 }
 
+/** Round-number ticks covering [lo, hi] that always include 0. */
+function zeroAnchoredTicks(lo: number, hi: number): number[] {
+  const span = hi - lo;
+  if (span <= 0) return [0];
+  const raw = span / 5;
+  const magnitude = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * magnitude).find((s) => s >= raw)!;
+  const ticks: number[] = [];
+  for (let t = Math.floor(lo / step) * step; t <= Math.ceil(hi / step) * step; t += step) {
+    ticks.push(Math.round(t));
+  }
+  return ticks;
+}
+
 const config: ChartConfig = {
   net: { label: 'Cumulative net', color: 'var(--success)' },
 };
@@ -33,8 +47,15 @@ export function RoiBreakEvenChart({
   roi3yPct,
 }: Props) {
   const gradientId = useId().replace(/:/g, '');
-  const fix = Math.max(totalFixCost, 0);
   const monthly = Math.max(annualSavings, 0) / 12;
+  // Older scans have no total_fix_cost; recover it from the backend payback so
+  // the curve still starts below zero instead of showing a month-0 break-even.
+  const fix =
+    totalFixCost > 0
+      ? totalFixCost
+      : paybackMonths && paybackMonths > 0
+        ? monthly * paybackMonths
+        : 0;
 
   const derivedPayback = fix <= 0 ? 0 : monthly > 0 ? fix / monthly : null;
   const payback =
@@ -48,6 +69,7 @@ export function RoiBreakEvenChart({
 
   const max = Math.max(...data.map((d) => d.net));
   const min = Math.min(...data.map((d) => d.net));
+  const yTicks = zeroAnchoredTicks(Math.min(min, 0), Math.max(max, 0));
   // Gradient stop where the series crosses zero (0 = top of the area box).
   const zeroOffset = max <= 0 ? 0 : min >= 0 ? 1 : max / (max - min);
 
@@ -113,7 +135,8 @@ export function RoiBreakEvenChart({
                 tickLine={false}
                 axisLine={false}
                 width={52}
-                domain={[(min: number) => Math.min(min, 0), (max: number) => Math.max(max, 0)]}
+                domain={[yTicks[0], yTicks[yTicks.length - 1]]}
+                ticks={yTicks}
                 tickFormatter={(v: number) => formatUsdCompact(v)}
               />
               <ChartTooltip

@@ -7,6 +7,22 @@ from typing import Any
 from intelligence.local_llm_service import LocalLLMService
 
 
+def _to_float(*values: Any) -> float:
+    """Return the first value that parses as a float, else 0.0.
+
+    LLM output may contain explicit nulls or non-numeric strings, so
+    ``dict.get`` defaults alone are not enough.
+    """
+    for value in values:
+        if value is None or isinstance(value, bool):
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return 0.0
+
+
 class ReportWriterAgent:
     """Generate executive summary, priorities, and ROI for a scan."""
 
@@ -19,14 +35,21 @@ class ReportWriterAgent:
         insights: dict[str, Any],
     ) -> str:
         """Return a short executive summary with fallback."""
+        # Pre-format numbers so the LLM echoes "$131,393" rather than raw floats.
+        top_modules = [
+            f"{module.get('module', 'unknown')} "
+            f"(${_to_float(module.get('total_cost_usd')):,.0f})"
+            for module in (analysis.get("module_summaries") or [])[:3]
+            if isinstance(module, dict)
+        ]
         prompt = (
             "Write a concise 3-sentence executive summary for a technical debt scan. "
-            "Use specific numbers and keep it plain. "
+            "Use specific numbers exactly as formatted below and keep it plain. "
             "Return plain text only.\n\n"
-            f"Analysis: total_cost={analysis.get('total_cost_usd')}, "
-            f"debt_score={analysis.get('debt_score')}, "
-            f"hours={analysis.get('total_remediation_hours')}, "
-            f"top_modules={analysis.get('module_summaries', [])[:3]}, "
+            f"Analysis: total_cost=${_to_float(analysis.get('total_cost_usd')):,.0f}, "
+            f"debt_score={_to_float(analysis.get('debt_score')):.1f}/10, "
+            f"hours={_to_float(analysis.get('total_remediation_hours')):,.0f}, "
+            f"top_modules={', '.join(top_modules) or 'none'}, "
             f"insights={insights}"
         )
         summary = await self.llm_service.invoke_text(prompt)
@@ -65,9 +88,12 @@ class ReportWriterAgent:
                     for f in cost_factors
                     if f.get("impact") == "high"
                 ][:3]
+                estimated_cost = _to_float(
+                    item.get("estimated_cost"), finding.get("cost_usd")
+                )
                 normalized.append(
                     {
-                        "rank": int(item.get("rank", index)),
+                        "rank": int(_to_float(item.get("rank"), index)),
                         "title": item.get("title", f"Remediate {finding.get('category', 'debt')}"),
                         "file_or_module": item.get(
                             "file_or_module",
@@ -75,17 +101,15 @@ class ReportWriterAgent:
                             or finding.get("file_path"),
                         ),
                         "why": item.get("why", "High-value remediation opportunity"),
-                        "estimated_hours": float(
-                            item.get("estimated_hours", finding.get("effort_hours", 0))
+                        "estimated_hours": _to_float(
+                            item.get("estimated_hours"), finding.get("effort_hours")
                         ),
-                        "estimated_cost": float(
-                            item.get("estimated_cost", finding.get("cost_usd", 0))
+                        "estimated_cost": estimated_cost,
+                        "saves_per_month": _to_float(
+                            item.get("saves_per_month"), estimated_cost * 0.0125
                         ),
-                        "saves_per_month": float(
-                             item.get("saves_per_month", float(item.get("estimated_cost", 0)) * 0.0125)
-                         ),
-                        "monthly_savings": float(
-                            item.get("monthly_savings", float(item.get("estimated_cost", 0)) * 0.0125)
+                        "monthly_savings": _to_float(
+                            item.get("monthly_savings"), estimated_cost * 0.0125
                         ),
                         "sprint": item.get("sprint", f"Sprint {index}"),
                         # Hybrid estimation pass-through

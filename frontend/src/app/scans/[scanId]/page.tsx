@@ -21,6 +21,7 @@ import {
   getScanSummary,
 } from '@/lib/api';
 import { repoDetailPath } from '@/lib/routes';
+import { cn } from '@/lib/utils';
 import {
   ScanDetailResponse,
   ScanFindingsResponse,
@@ -233,7 +234,12 @@ export default function ScanDetailPage({ params }: Props) {
         <SectionSkeleton className="h-28" />
       ) : null}
 
-      <div className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-2">
+      <div
+        className={cn(
+          'grid min-w-0 grid-cols-1 gap-6',
+          isEngineer && modules && 'xl:grid-cols-2',
+        )}
+      >
         <CostBreakdownChart costByCategory={summary.cost_by_category} />
         {isEngineer && modules && <ModuleRiskList modules={modules.modules} />}
       </div>

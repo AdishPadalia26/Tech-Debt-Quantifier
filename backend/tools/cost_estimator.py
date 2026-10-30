@@ -1200,13 +1200,6 @@ class CostEstimator:
 
         logger.info("[COST EST] Step 0b: Fetching dynamic benchmarks...")
         publish_progress(30, "Fetching benchmarks and rates")
-        benchmarks = BenchmarkAgent().get_current_benchmarks(
-            profile["tech_stack"]["primary_language"]
-        )
-        cisq_per_function = benchmarks["cost_per_function_usd"]
-        self._track_data_source("benchmarks", benchmarks.get("confidence") != "high")
-        logger.info(f"[COST EST] CISQ benchmark: ${cisq_per_function:.2f}/function ({benchmarks.get('cost_per_function_source')})")
-        
         rates_source = stack_rates.get("code_quality", {}).get("confidence", "low")
         self._track_data_source("hourly_rates", rates_source == "low")
 
@@ -1219,6 +1212,14 @@ class CostEstimator:
             )
         except Exception:
             logger.warning("[COST EST] Rate blend metadata unavailable", exc_info=True)
+
+        # Benchmark is derived from the same live rate blend (no second lookup).
+        benchmarks = BenchmarkAgent().get_current_benchmarks(
+            profile["tech_stack"]["primary_language"], rate=rate_blend
+        )
+        cisq_per_function = benchmarks["cost_per_function_usd"]
+        self._track_data_source("benchmarks", benchmarks.get("confidence") != "high")
+        logger.info(f"[COST EST] CISQ benchmark: ${cisq_per_function:.2f}/function ({benchmarks.get('cost_per_function_source')})")
 
         logger.info("[COST EST] Step 1: Running static analysis...")
         publish_progress(35, "Running static analysis")

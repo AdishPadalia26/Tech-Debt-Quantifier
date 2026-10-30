@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, Loader2 } from 'lucide-react';
 
 import { pollResults } from '@/lib/api';
+import { cn } from '@/lib/utils';
 import { JobResult } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -13,19 +14,20 @@ interface Props {
   onComplete: (result: JobResult) => void;
 }
 
+// The backend keeps status at "processing" for the whole run and only moves
+// `progress`, so steps are matched on percentage. Thresholds mirror the
+// backend phases (clone 5, analysis 25-88, report 92, done 100).
 const STEPS = [
-  { key: 'queued', label: 'Queued', pct: 5 },
-  { key: 'processing', label: 'Preparing analysis', pct: 10 },
-  { key: 'running', label: 'Cloning repository', pct: 20 },
-  { key: 'analyzing', label: 'Running analysis', pct: 60 },
-  { key: 'reporting', label: 'Generating report', pct: 85 },
+  { key: 'cloning', label: 'Cloning repository', pct: 5 },
+  { key: 'analyzing', label: 'Running analysis', pct: 25 },
+  { key: 'reporting', label: 'Generating report', pct: 92 },
   { key: 'complete', label: 'Complete', pct: 100 },
 ];
 
 export default function ProgressBar({ jobId, onComplete }: Props) {
   const [status, setStatus] = useState('queued');
   const [error, setError] = useState('');
-  const [progress, setProgress] = useState(5);
+  const [progress, setProgress] = useState(0);
   const [phase, setPhase] = useState('Queued');
   const onCompleteRef = useRef(onComplete);
 
@@ -61,8 +63,9 @@ export default function ProgressBar({ jobId, onComplete }: Props) {
     };
   }, [jobId]);
 
-  const currentStep = STEPS.find((s) => s.key === status) || STEPS[0];
-  const pct = progress || currentStep.pct;
+  const pct = status === 'complete' ? 100 : Math.max(0, Math.min(100, Math.round(progress)));
+  // Index of the step currently running (-1 while still queued).
+  const activeIndex = STEPS.reduce((acc, step, i) => (pct >= step.pct ? i : acc), -1);
 
   if (error) {
     return (
@@ -87,35 +90,57 @@ export default function ProgressBar({ jobId, onComplete }: Props) {
       <CardContent className="space-y-5">
         <div className="space-y-2">
           <div className="flex justify-between text-sm text-muted-foreground">
-            <span>{phase || currentStep.label}</span>
+            <span>{phase || STEPS[activeIndex]?.label || 'Queued'}</span>
             <span>Job {jobId.slice(0, 8)}</span>
           </div>
           <Progress value={pct} />
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-4">
-          {STEPS.filter((s) => s.key !== 'queued').map((step) => {
-            const done = STEPS.indexOf(currentStep) >= STEPS.indexOf(step);
+        <ol className="grid gap-3 sm:grid-cols-4">
+          {STEPS.map((step, i) => {
+            const done = i < activeIndex || pct >= 100;
+            const active = i === activeIndex && !done;
             return (
-              <div
+              <li
                 key={step.key}
-                className="rounded-lg border border-border bg-muted/20 p-3"
+                aria-current={active ? 'step' : undefined}
+                className={cn(
+                  'rounded-lg border p-3 transition-colors duration-300',
+                  active
+                    ? 'border-primary bg-primary/10'
+                    : done
+                      ? 'border-primary/40 bg-muted/20'
+                      : 'border-border bg-muted/20',
+                )}
               >
                 <div className="mb-2 flex items-center gap-2">
-                  <CheckCircle2
-                    className={`size-4 ${done ? 'text-primary' : 'text-muted-foreground/40'}`}
-                  />
+                  {active ? (
+                    <Loader2 className="size-4 animate-spin text-primary" />
+                  ) : (
+                    <CheckCircle2
+                      className={cn(
+                        'size-4 transition-colors duration-300',
+                        done ? 'text-primary' : 'text-muted-foreground/40',
+                      )}
+                    />
+                  )}
                   <span className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
                     {step.pct}%
                   </span>
                 </div>
-                <p className={`text-sm ${done ? 'text-foreground' : 'text-muted-foreground'}`}>
+                <p
+                  className={cn(
+                    'text-sm',
+                    done || active ? 'text-foreground' : 'text-muted-foreground',
+                    active && 'font-medium',
+                  )}
+                >
                   {step.label}
                 </p>
-              </div>
+              </li>
             );
           })}
-        </div>
+        </ol>
 
         <p className="text-sm text-muted-foreground">
           Running clone, static analysis, git mining, and report generation. Most

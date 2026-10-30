@@ -8,12 +8,8 @@ import pytest
 
 import intelligence.rate_agent as rate_agent_mod
 from data.reference_tables import REFERENCE_TABLES_VERSION, live_cache
-from intelligence.benchmark_agent import parse_per_function_cost
 from intelligence.rate_agent import RateIntelligenceAgent
-from intelligence.security_cost_agent import (
-    parse_breach_cost,
-    parse_breach_probability,
-)
+from intelligence.security_cost_agent import parse_breach_cost
 
 ddgs_mod = pytest.importorskip("ddgs")
 
@@ -51,10 +47,7 @@ BLS_JSON = {
 LEVELS_JSON = [
     {"title": "Python Engineer", "totalyearlycompensation": 208000}
 ] * 3
-BENCH_HTML = (
-    "<html><body><p>Studies vary. Remediation costs about $620 per function "
-    "point on average.</p></body></html>"
-)
+OTHER_HTML = "<html><body><p>No data here.</p></body></html>"
 DDG_RESULTS = [
     {
         "body": (
@@ -92,7 +85,7 @@ class _Net:
             return _Resp(BLS_JSON)
         if "levels.fyi" in url:
             return _Resp(LEVELS_JSON)
-        return _Resp(BENCH_HTML)
+        return _Resp(OTHER_HTML)
 
 
 @pytest.fixture
@@ -222,49 +215,59 @@ def test_live_rates_used(canned: _Net) -> None:
 
 
 def test_live_benchmark_used(canned: _Net) -> None:
-    """A strict per-function-point sentence is accepted and cited."""
-    from intelligence.benchmark_agent import BenchmarkAgent
+    """Benchmark is derived from the live rate blend and cited."""
+    from intelligence.benchmark_agent import (
+        REMEDIATION_HOURS_PER_FUNCTION,
+        BenchmarkAgent,
+    )
 
-    b = BenchmarkAgent().get_current_benchmarks("python")
-    assert b["live"] is True
-    assert b["cost_per_function_usd"] == 620.0
-    assert "$620 per function point" in b["citation"]
+    rate = RateIntelligenceAgent().blend_rates("Python", "mid")
+    b = BenchmarkAgent().get_current_benchmarks("python", rate=rate)
+    assert b["live"] is True and b["confidence"] == "high"
+    assert b["cost_per_function_usd"] == pytest.approx(
+        rate["blended_rate"] * REMEDIATION_HOURS_PER_FUNCTION, abs=0.01
+    )
+    assert "live blended mid-level rate" in b["citation"]
+
+
+def test_benchmark_anchored_to_reference() -> None:
+    """At the reference rate the derived benchmark equals the table value."""
+    import constants
+    from intelligence.benchmark_agent import REFERENCE_MID_RATE_USD, BenchmarkAgent
+
+    rate = {"blended_rate": REFERENCE_MID_RATE_USD, "live": True, "source": "x"}
+    b = BenchmarkAgent().get_current_benchmarks("python", rate=rate)
+    assert b["cost_per_function_usd"] == pytest.approx(
+        constants.CISQ_COST_PER_FUNCTION, abs=0.01
+    )
+    stale = {"blended_rate": 120.0, "live": False}
+    assert BenchmarkAgent().get_current_benchmarks("python", rate=stale)["live"] is False
 
 
 def test_live_security_used(canned: _Net) -> None:
-    """Breach cost and DBIR probability come from search snippets."""
+    """Breach cost comes from search snippets; DBIR probability from the table."""
+    from data.reference_tables import DBIR_TABLE
     from intelligence.security_cost_agent import SecurityCostAgent
 
     r = SecurityCostAgent().get_risk_weighted_cost("CWE-78", 9.0, 2.0, 100.0)
-    assert r["live"] is True and r["data_fresh"] is True
+    assert r["live"] is True and r["data_fresh"] is False
+    assert r["source_details"]["breach_cost"]["live"] is True
     assert r["breach_cost_used"] == pytest.approx(4_450_000 * 1.3)
-    assert r["breach_probability_pct"] == pytest.approx(12 * 0.9, abs=0.01)
+    assert r["breach_probability_pct"] == pytest.approx(
+        DBIR_TABLE["value"] * 0.9 * 100, abs=0.01
+    )
 
 
 # (c) strict parsers ----------------------------------------------------------
-def test_benchmark_parser_strict() -> None:
-    """Blog-style loose text is rejected; tied sentence accepted."""
-    blog = (
-        "Defects can cost $607 to fix in production. Teams ship every "
-        "function they write. Another figure is $12 per function point."
-    )
-    assert parse_per_function_cost(blog) is None
-    good = "CISQ estimates remediation at $1,250 per function point."
-    value, snippet = parse_per_function_cost(good) or (0, "")
-    assert value == 1250.0 and "per function point" in snippet
-    assert parse_per_function_cost("It costs $90,000 per function.") is None
-
-
 def test_security_parsers_strict() -> None:
-    """Breach cost and probability need tight patterns and sane ranges."""
+    """Breach cost needs a tight pattern and a sane range."""
     assert parse_breach_cost("Average cost of a data breach: $4.88 million.") == (
         pytest.approx(4_880_000)
     )
+    assert parse_breach_cost(
+        "The global average cost of a data breach reached USD 4.99 million."
+    ) == pytest.approx(4_990_000)
     assert parse_breach_cost("Company raised $50 million in funding.") is None
-    assert parse_breach_probability(
-        "The probability of a breach is 8%."
-    ) == pytest.approx(0.08)
-    assert parse_breach_probability("We saw 80% growth in breach reports") is None
 
 
 # (d) caching -----------------------------------------------------------------
